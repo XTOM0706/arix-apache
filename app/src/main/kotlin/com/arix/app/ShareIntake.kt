@@ -36,7 +36,7 @@ data class SharedPayload(
 /**
  * 「系统级入口」之一二：分享面板接收 + 划词处理，两条路汇到同一个进程级收件箱。
  *
- * 结构照抄 [CapsuleActionBridge]：**保留最后值**的 StateFlow。理由一样——分享可能发生在 App
+ * 结构照抄保留最后值的 StateFlow 范式。理由一样——分享可能发生在 App
  * 完全没在跑的时候，值得留着等聊天页组合出来再取走；而 Activity 那侧（冷启动 onCreate / 已在跑
  * 时的 onNewIntent）只管往这里投递，不关心谁在接。
  *
@@ -79,6 +79,17 @@ object ShareIntake {
 
     /** 消费方取走后清空，避免重复注入。 */
     fun consume() { _pending.value = null }
+
+    /**
+     * 程序内部直接投递一条纯文本（如悬浮球发送）。
+     * 与系统分享共用同一个收件箱：聊天页挂接后就由它消费（填进输入框待发 / 直接发）。
+     * 文本同样过不可信围栏（[SharedPayload.forModel] 由消费方决定怎么用）。
+     */
+    fun postText(text: String, source: String = "内部") {
+        val t = text.trim()
+        if (t.isBlank()) return
+        _pending.value = SharedPayload(t, emptyList(), source)
+    }
 
     /**
      * 解析一条可能是「外部分享 / 划词」的 Intent，命中就投递并返回 true。

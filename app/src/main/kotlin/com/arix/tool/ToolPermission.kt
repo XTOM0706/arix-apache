@@ -360,7 +360,7 @@ object ToolPermissionManager {
 
     /**
      * 把一次工具调用翻成人话（如「点击界面上的「发送」」「联网搜索：…」「读取当前屏幕上的内容」）。
-     * 公开薄封装，给实时胶囊 [com.arix.app.CapsuleBridge] 等「展示 AI 当前动作」的地方复用**同一套措辞**，
+     * 公开薄封装，给各「展示 AI 当前动作」的地方复用**同一套措辞**，
      * 免得各处各拼一版、和授权弹窗说的不是一回事。纯字符串、无副作用。
      */
     fun humanizeIntent(name: String, args: JSONObject): String = describeIntent(name, args)

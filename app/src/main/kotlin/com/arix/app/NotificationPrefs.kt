@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * 不受本开关管的（拦了要么崩要么本就是可见 UI）：前台服务常驻通知（WakeService/ScreenCaptureService，
  * 拦了抛 ForegroundServiceDidNotStartInTimeException）、唤醒全屏兜底、实时胶囊/超级岛。
  *
- * 即时生效：改任意项 [version] 自增，订阅它的设置界面跟随重组（同 [CapsulePrefs] 范式）。
+ * 即时生效：改任意项 [version] 自增，订阅它的设置界面跟随重组（同本文件范式）。
  */
 object NotificationPrefs {
     private const val PREFS = "xtom_notification"

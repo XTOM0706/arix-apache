@@ -112,13 +112,10 @@ import kotlin.math.roundToInt
  *
  * 面板里有两颗键，各自复用一条**现成**的链路：
  *
- *  · **发送（打字）** → [CapsuleActionBridge.submitInput] + 把 MainActivity 拉前台。
- *    这就是实时胶囊「岛内直接回复」用的那条路，逐字照抄 [CapsuleActionReceiver] 的做法：
- *    文本落进保留最后值的 StateFlow，ChatScreen 的收集器接住就按正常聊天发出去 ——
- *    工具循环、记忆注入、角色卡、入库、超级岛全都是聊天页那一套，我们一行模型代码都没写。
- *    ⚠ 代价说清楚：这条路**会把 App 切到前台**（不切的话没人消费 pendingInput，全项目只有
- *    `ChatScreen` 一个收集器）。要"打字也不切 App"需要给 WakeAssistantScreen 加一个预填参数，
- *    那要改现有文件，本次不做（最终回复里给了可选的三行补丁）。
+ *  · **发送（打字）** → 文本随 Intent 交给 MainActivity（onNewIntent 接住投给 ShareIntake），
+ *    并把 MainActivity 拉前台。聊天页的收集器接住就按正常聊天发出去 ——
+ *    工具循环、记忆注入、角色卡、入库全都是聊天页那一套，我们一行模型代码都没写。
+ *    ⚠ 代价说清楚：这条路**会把 App 切到前台**。
  *
  *  · **麦克风 / 就地对话** → [WakeOverlayHost.show]。它把 `WakeAssistantScreen` 装进
  *    TYPE_APPLICATION_OVERLAY 悬浮窗里，**盖在任何 App 之上、完全不切 App**，
@@ -445,17 +442,17 @@ object FloatingChatBall : LifecycleOwner, ViewModelStoreOwner, SavedStateRegistr
     // ── 发送链路（见类注释：两条都是现成的，浮层里没有一行调模型的代码）──────
 
     /**
-     * 打字发送：文本进 [CapsuleActionBridge]（保留最后值的 StateFlow），再把 MainActivity 拉前台
-     * 让 ChatScreen 的收集器接走 —— 与实时胶囊「岛内直接回复」完全同一条路。
+     * 打字发送：文本随 [ACTION_BALL_SEND] 交给 MainActivity（onNewIntent 接住后投给 ShareIntake，
+     * 聊天页挂接即消费），再把 MainActivity 拉前台。
      */
     private fun sendTyped(app: Context, text: String) {
         val t = text.trim()
         if (t.isBlank()) return
-        CapsuleActionBridge.submitInput(t)
         runCatching {
             app.startActivity(
                 Intent(app, MainActivity::class.java)
                     .setAction(ACTION_BALL_SEND)
+                    .putExtra(EXTRA_BALL_TEXT, t)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             )
         }
@@ -714,4 +711,7 @@ object FloatingChatBall : LifecycleOwner, ViewModelStoreOwner, SavedStateRegistr
     /** 私有 action：不影响路由（MainActivity 是 singleTask、只看 extra），纯粹是为了在日志/最近任务里
      *  一眼分得出这次前台化是谁触发的。 */
     private const val ACTION_BALL_SEND = "com.arix.app.action.BALL_SEND"
+
+    /** 悬浮球「打字发送」带过去的文本 extra。 */
+    const val EXTRA_BALL_TEXT = "xtom_ball_text"
 }

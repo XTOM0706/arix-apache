@@ -325,8 +325,8 @@ object MediaKeyController {
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 )
             }
-            // 现成的进程级桥，ChatScreen 的收集器接住即 sendJob.cancel()（见 CapsuleActionBridge）
-            FloatingAssistPrefs.KeyAction.STOP_GEN -> CapsuleActionBridge.requestStop()
+            // 现成的进程级桥，ChatPage 的收集器接住即 sendJob.cancel()（见 ChatStopBus）
+            FloatingAssistPrefs.KeyAction.STOP_GEN -> ChatStopBus.requestStop()
             FloatingAssistPrefs.KeyAction.TOGGLE_BALL -> FloatingChatBall.toggle(app)
         }
     }

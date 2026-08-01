@@ -243,7 +243,6 @@ class StdioMcpClient(private val context: Context, internal val command: String)
     fun close() {
         started = false
         disposeTransport()
-        synchronized(lineBuf) { lineBuf.reset() }
         failAllPending()
     }
 }

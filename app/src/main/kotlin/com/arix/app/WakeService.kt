@@ -73,7 +73,7 @@ class WakeService : Service() {
         }
 
         /**
-         * 生成保活：AI 一轮生成开始时调（由 [CapsuleBridge] 在真有必要时触发——已在后台生成/长生成，
+         * 生成保活：AI 一轮生成开始时调（由生成路径在真有必要时触发——已在后台生成/长生成，
          * 见那边策略）。若 wake 未在跑，则以 dataSync 前台把进程护住，不开麦/不开引擎；wake 已在跑则
          * 共用它那条前台通知、什么都不叠。用 startForegroundService 抢在 5s 内 startForeground。
          * 后台起前台被系统拒（12+ 限制）时安静吞掉——尽力而为，绝不崩、不影响生成本身。

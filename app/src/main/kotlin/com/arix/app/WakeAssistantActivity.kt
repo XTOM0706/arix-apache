@@ -327,20 +327,6 @@ internal fun WakeAssistantScreen(
     // 语音输入后自动继续听（免手多轮）：回答读完 autoListenTick++ → 这里触发下一轮聆听
     androidx.compose.runtime.LaunchedEffect(autoListenTick) { if (autoListenTick > 0) startListening() }
 
-    // 悬浮球面板里打的字：在**这个浮层里**就地开一轮，不把用户切到 App 去。
-    // 少了这段，悬浮球的"发送"只能拉起 MainActivity（全项目只有 ChatScreen 一个 pendingInput 收集器），
-    // 于是"不用切 App 就能聊"这个卖点在打字这条路上是不成立的。
-    // lastWasVoice=false：打字进来的不该在答完之后自动竖起耳朵听。
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        com.arix.app.CapsuleActionBridge.pendingInput.collect { t ->
-            if (!t.isNullOrBlank()) {
-                com.arix.app.CapsuleActionBridge.consumeInput()
-                lastWasVoice = false
-                runTurn(t)
-            }
-        }
-    }
-
     androidx.compose.runtime.LaunchedEffect(Unit) {
         // 绑定当前/默认角色卡 + 算续接摘要 + 取模型系统提示（让唤醒助手带人设/记忆/人格延续）
         try {

@@ -20,7 +20,7 @@ import android.provider.Settings
  *    平台给这类应用留的唯一入口是：**当 App 创建第一个通知渠道时**，系统自己把权限框弹出来。
  *
  * 我们两条路同时堵死了：既在按 targetSdk≥33 的方式请求（必然失败），
- * 所有通知渠道又都是**懒建**的（`CapsuleBridge` / `Reminders` / `ProactiveMessage` / `Diary` /
+ * 所有通知渠道又都是**懒建**的（`Reminders` / `ProactiveMessage` / `Diary` /
  * `WakeService` / `ScreenCaptureService` 全是用到时才建）——首次安装一个渠道都不建，
  * 于是系统那条兜底路也永远不会触发。
  *

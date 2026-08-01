@@ -231,6 +231,10 @@ import androidx.compose.ui.unit.IntOffset
          intent.getLongExtra(EXTRA_OPEN_CONV, -1L).takeIf { it > 0 }?.let { openConv.value = it }
          intent.getStringExtra(EXTRA_OPEN_PAGE)?.takeIf { it.isNotBlank() }?.let { openPage.value = it }
          if (intent.getBooleanExtra(XtomWidget.EXTRA_NEW_CHAT, false)) newChatTrigger.value++
+         // 悬浮球「打字发送」：文本投给 ShareIntake 收件箱，聊天页挂接即消费。
+         intent.getStringExtra(FloatingChatBall.EXTRA_BALL_TEXT)?.takeIf { it.isNotBlank() }?.let {
+             ShareIntake.postText(it, "悬浮球")
+         }
          // ⚠ 分享/划词这条**必须在这里也接一次**：App 已经开着时系统复用 singleTask 实例走的是 onNewIntent，
          // 只在 onCreate 里读 intent 的话，从分享面板进来会什么都不发生（最容易漏的一处）。
          // 两种形态：分享面板直投（自带 SEND action）/ 划词代理转交（只带路由标记，内容已在收件箱）。
@@ -294,6 +298,10 @@ import androidx.compose.ui.unit.IntOffset
          openConv.value = intent.getLongExtra(EXTRA_OPEN_CONV, -1L).takeIf { it > 0 }
          openPage.value = intent.getStringExtra(EXTRA_OPEN_PAGE)?.takeIf { it.isNotBlank() }
          if (intent.getBooleanExtra(XtomWidget.EXTRA_NEW_CHAT, false)) newChatTrigger.value++
+         // 悬浮球「打字发送」：文本投给 ShareIntake 收件箱，聊天页挂接即消费（冷启动这一路）。
+         intent.getStringExtra(FloatingChatBall.EXTRA_BALL_TEXT)?.takeIf { it.isNotBlank() }?.let {
+             ShareIntake.postText(it, "悬浮球")
+         }
          // 分享/划词的冷启动这一路（热启动那一路在 onNewIntent）。ShareIntake 自己挡重放：
          // 从「最近任务」点回来时系统会把原来那条分享 Intent 再发一遍，不挡就会重复灌一次内容。
          if (ShareIntake.handle(this, intent) || ShareIntake.isRouteToChat(intent)) shareTrigger.value++
@@ -462,10 +470,7 @@ import androidx.compose.ui.unit.IntOffset
      LaunchedEffect(sharedIn) {
          val p = sharedIn ?: return@LaunchedEffect
          if (ShareIntake.chatConsumerAttached) return@LaunchedEffect
-         val forModel = p.forModel()
-         if (forModel.isBlank()) return@LaunchedEffect
          ShareIntake.consume()
-         CapsuleActionBridge.submitInput(forModel)
      }
      var chatSearchActive by remember { mutableStateOf(false) }
      var chatBarsVisible by remember { mutableStateOf(true) }  // 聊天页顶栏随滚动自动隐藏
@@ -1105,22 +1110,6 @@ import androidx.compose.ui.unit.IntOffset
                  }
              }
          } // end Scaffold
-         // 应用内灵动岛：顶部居中悬浮、覆于所有页面之上、不占布局。由 displayMode(inapp/both) 决定挂载，
-         // 内容来自 CapsuleBridge.island（与系统岛同源），配色/流光随 CapsulePrefs 即时生效。
-         val islandCapV by CapsulePrefs.version.collectAsState()
-         val islandState by CapsuleBridge.island.collectAsState()
-         val islandMode = remember(islandCapV) { CapsulePrefs.displayMode(context) }
-         if (islandMode == "inapp" || islandMode == "both") {
-             InAppIsland(
-                 state = islandState,
-                 palette = remember(islandCapV) { CapsulePrefs.palette(context) },
-                 animated = remember(islandCapV) { CapsulePrefs.animated(context) },
-                 modifier = Modifier
-                     .align(Alignment.TopCenter)
-                     .statusBarsPadding()
-                     .padding(top = 8.dp),
-             )
-         }
          } // end 下沉/莫奈填充/拦触摸 Box
      } // end ModalNavigationDrawer
 

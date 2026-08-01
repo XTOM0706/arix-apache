@@ -15,7 +15,7 @@ import com.arix.tool.createBuiltInPackages
 class XtomApp : Application(), ImageLoaderFactory {
 
     companion object {
-        /** 进程级 application context，供无 Activity 上下文的后台单例用（如 XmsfUnlock 的延时恢复）。 */
+        /** 进程级 application context，供无 Activity 上下文的后台单例用。 */
         @Volatile
         var appContext: android.content.Context? = null
             private set
@@ -51,12 +51,6 @@ class XtomApp : Application(), ImageLoaderFactory {
         // 装配 Operit 兼容层（本地包/JS插件/MCP）——此前从未初始化，导致整套 OperitCompat 一直是死的。
         // refresh 在后台跑（含 MCP 进程发现，别在主线程 runBlocking 造成 ANR）。
         OperitCompat.init(this)
-        // 实时胶囊桥：订阅中央 AI 行为流（当前工具动作/深搜进度/生成起止），把「AI 现在在干嘛」推上灵动岛，
-        // 并在后台完成时发通知。进程级单飞、不绑 Activity，只订阅现成 StateFlow，冷启动开销可忽略。
-        CapsuleBridge.start(this)
-        // 安全兜底：上次会话若在「断 xmsf 网 ~1s」窗口内被杀/恢复失败，xmsf 可能残留断网（整机 MiPush 挂）。
-        // 启动时若超级岛开着就无条件恢复一次 xmsf 联网，自愈泄漏的断网（幂等无害）。见 XmsfUnlock.healOnStart。
-        runCatching { XmsfUnlock.healOnStart(this) }
         // 非首帧关键的初始化挪到后台：PDF 资源(仅抽 PDF 用)、按模型用量加载(仅统计页用)、MCP socket 绑定，
         // 都不该卡在冷启动主线程 onCreate 上。用守护线程一次跑掉。
         val app = this
