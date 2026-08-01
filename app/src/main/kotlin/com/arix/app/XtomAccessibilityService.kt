@@ -27,10 +27,7 @@ data class UiNode(
 class XtomAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() { instance = this }
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // 技能录制期间才处理事件（点击/输入/滚动 → 步骤），平时零开销
-        if (com.arix.tool.SkillRecorder.isRecording) com.arix.tool.SkillRecorder.onEvent(event)
-    }
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
     override fun onInterrupt() {}
     override fun onDestroy() { super.onDestroy(); if (instance === this) instance = null }
 

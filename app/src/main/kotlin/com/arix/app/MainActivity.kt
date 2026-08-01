@@ -1067,7 +1067,6 @@ import androidx.compose.ui.unit.IntOffset
                      "plugins" -> PluginCreatorPage(scope = scope, context = context)
                       "import" -> ImportExportPage(scope = scope, context = context)
                       "usage" -> UsageStatsPage(context = context)
-                      "workflows" -> WorkflowPage(scope = scope, context = context)
                       "browser" -> BrowserPage(onBack = { currentPage = "chat" })
                       // 旧路由保留：外部/历史入口可能还指着它，MonitorPage 现在只是转发到活动中心
                       "monitor" -> MonitorPage(scope = scope)

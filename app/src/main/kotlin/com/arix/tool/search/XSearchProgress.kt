@@ -18,7 +18,7 @@ data class XSearchProgress(
 
 object XSearchProgressBus {
     val state = MutableStateFlow<XSearchProgress?>(null)
-    fun update(p: XSearchProgress) { if (com.arix.tool.SubAgentContext.active) return; state.value = p }
+    fun update(p: XSearchProgress) { state.value = p }
     fun clear() { state.value = null }
 }
 

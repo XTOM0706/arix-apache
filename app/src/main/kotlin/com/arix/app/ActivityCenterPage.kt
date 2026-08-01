@@ -162,7 +162,6 @@ private fun MonitorSection(scope: kotlinx.coroutines.CoroutineScope) {
     val type = MaterialTheme.typography
     var summary by remember { mutableStateOf<com.arix.cloudapi.ApiMonitor.ApiMonitorSummary?>(null) }
     var recentCalls by remember { mutableStateOf<List<com.arix.cloudapi.ApiMonitor.CallRecord>>(emptyList()) }
-    var guardLevel by remember { mutableStateOf(com.arix.tool.AIGuardTool.getRiskLevel()) }
     // 清空后要重新取一遍数字，用它触发
     var reload by remember { mutableStateOf(0) }
 
@@ -201,49 +200,6 @@ private fun MonitorSection(scope: kotlinx.coroutines.CoroutineScope) {
                     }
                 }
             }
-        }
-
-        Spacer(Modifier.height(12.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.Shield, contentDescription = null, tint = scheme.secondary, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(4.dp))
-            Text(tr("AI 风控"), color = scheme.secondary, style = type.titleSmall, fontWeight = FontWeight.Bold)
-        }
-        Text(tr("调严→敏感操作更容易被挡下（更安全）；调松→更少打扰但风险高。"), color = scheme.onSurfaceVariant, style = type.labelSmall)
-        Spacer(Modifier.height(6.dp))
-        XtomCard {
-            val levels = listOf("strict" to tr("严格"), "normal" to tr("普通"), "permissive" to tr("宽松"))
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                levels.forEachIndexed { i, (level, label) ->
-                    SegmentedButton(
-                        selected = guardLevel == level,
-                        onClick = {
-                            guardLevel = level
-                            scope.launch {
-                                com.arix.tool.AIGuardTool().execute(
-                                    org.json.JSONObject().apply { put("action", "set_level"); put("level", level) }
-                                )
-                            }
-                        },
-                        shape = SegmentedButtonDefaults.itemShape(index = i, count = levels.size),
-                        icon = {},
-                    ) { Text(label, style = type.labelMedium, maxLines = 1) }
-                }
-            }
-            Spacer(Modifier.height(6.dp))
-            Text(
-                when (guardLevel) {
-                    "strict" -> tr("严格：所有工具执行前都要你点确认。")
-                    "normal" -> tr("普通：高风险工具（shell / 触控 / 亮度 / 音量等）才要确认。")
-                    else -> tr("宽松：只拦最危险的（shell）。")
-                },
-                color = scheme.onSurfaceVariant, style = type.bodySmall,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                tr("被拦下的调用会以「被拒」出现在「行为流」标签里，不会悄悄消失。"),
-                color = scheme.onSurfaceVariant, style = type.labelSmall,
-            )
         }
 
         if (recentCalls.isNotEmpty()) {

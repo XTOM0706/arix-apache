@@ -125,9 +125,6 @@ class XtomNotificationListener : NotificationListenerService() {
             } catch (_: Exception) { n.packageName }
             NotificationStore.add(app, n.packageName, title, text, n.postTime, n.key,
                 actionsOf(notif), notif.contentIntent != null, n.isClearable)
-            // 工作流的「通知内容匹配」触发器。这是**推**的一路：不接的话它只能靠 20 秒轮询环形缓存，
-            // 又慢又在 doze 下停摆。内部自己丢 IO 协程，不会在 onNotificationPosted 里干活。
-            WorkflowTriggers.onNotificationPosted(applicationContext, n.packageName, title, text, n.key)
         } catch (_: Exception) {}
     }
 

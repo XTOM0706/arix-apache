@@ -288,17 +288,6 @@
             </intent-filter>
         </service>
 
-        <!-- ADB 保活：开机自恢复 Shizuku。directBootAware=true 才能在解锁前收 LOCKED_BOOT_COMPLETED（尽早自恢复）。 -->
-        <receiver
-            android:name=".AdbBootReceiver"
-            android:exported="true"
-            android:directBootAware="true">
-            <intent-filter>
-                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-            </intent-filter>
-        </receiver>
-
         <!-- 桌面小组件：Arix 快速入口（点击开始新对话） -->
         <receiver
             android:name=".XtomWidget"

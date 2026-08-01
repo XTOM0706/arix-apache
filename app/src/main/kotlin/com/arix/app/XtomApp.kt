@@ -24,9 +24,9 @@ class XtomApp : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         // ⭐ 必须是**第一件事**：隐身进程只需要给 WebView 换数据目录，然后立刻收手。
-        // 主进程那一整套初始化（注册工具 / 起 MCP server / 建通知渠道 / 补 DB 全文索引 / 恢复 xmsf 联网…）
-        // 在第二个进程里重跑一遍不只是浪费——MCP server 会抢同一个端口、通知渠道会重复建、
-        // WorkflowTriggers 会挂第二份系统监听。而 setDataDirectorySuffix 又要求"任何 WebView 创建之前"，
+        // 主进程那一整套初始化（注册工具 / 起 MCP server / 建通知渠道 / 补 DB 全文索引…）
+        // 在第二个进程里重跑一遍不只是浪费——MCP server 会抢同一个端口、通知渠道会重复建。
+        // 而 setDataDirectorySuffix 又要求"任何 WebView 创建之前"，
         // 所以这一句既是隔离的起点，也是进程分流的闸。见 IncognitoWeb。
         if (IncognitoWeb.bootstrapIfIncognito(this)) return
         appContext = applicationContext
@@ -79,8 +79,6 @@ class XtomApp : Application(), ImageLoaderFactory {
             // 所以启动时装一次。放这条守护线程里而不是主线程：它要读一次 DB。
             // 装完之前 hints 是空的 → 那一小会儿只是不带提示，不影响别的任何东西。
             runCatching { kotlinx.coroutines.runBlocking { LessonRecorder.warmUp(app) } }
-            // 工作流自动触发：按已保存工作流实际用到的触发器挂系统监听（没人用就一个都不挂，见 WorkflowTriggers）。
-            runCatching { WorkflowTriggers.init(app) }
             // 聊天全文索引的补建：老会话在这之前没有索引，不补的话跨对话搜索一直走全表扫
             // （把每个会话的完整 messagesJson 拉进内存逐条 parse）。幂等、单飞、分批带 delay，
             // 不放这儿的话要等用户第一次搜索时才触发，那一次仍然是全扫。

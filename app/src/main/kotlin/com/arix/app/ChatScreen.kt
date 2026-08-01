@@ -2151,10 +2151,6 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
                 val proposals by com.arix.app.SettingProposalBus.pending.collectAsState()
                 proposals.forEach { p -> AppearAnim { SettingProposalCard(p, context) } }
             }
-            item(key = "subagent_progress") {
-                val sap by com.arix.tool.SubAgentProgressBus.state.collectAsState()
-                sap?.let { AppearAnim { SubAgentProgressBubble(it) } }
-            }
             item(key = "ask_user") {
                 val ask by com.arix.tool.AskUserBus.pending.collectAsState()
                 ask?.let { AppearAnim { AskUserCard(it) } }
@@ -3238,16 +3234,6 @@ private fun MessageSendAppear(active: Boolean, content: @Composable () -> Unit) 
                 }
             }
         }
-    }
-}
-
-// 子 agent 运行进度气泡：观察 SubAgentProgressBus，显示 完成 done/total + 各任务，别让用户以为卡住
-@Composable private fun SubAgentProgressBubble(p: com.arix.tool.SubAgentProgress) {
-    val scheme = MaterialTheme.colorScheme
-    val accents = LocalXtomAccents.current
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp, horizontal = 4.dp).animateContentSize(tween(220, easing = FastOutSlowInEasing))) {
-        Text(tr("子 agent 运行中 · 完成 %d/%d").format(p.done, p.total), color = accents.info, style = MaterialTheme.typography.labelLarge)
-        p.tasks.forEach { Text("· $it", color = scheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
     }
 }
 
