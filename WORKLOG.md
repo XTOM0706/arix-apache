@@ -1,39 +1,59 @@
-# WORKLOG — Arix
-更新时间：2026-08-01 19:50
-最近提交：34d90c4（README：Release 发布说明 + 二次开发预编译库用法）· 公开仓 main = 34d90c4
+# WORKLOG — Arix Apache-2.0 精简版
 
-## 本次交接（2026-08-01 晚）
-- **预编译库发布**：v0.2.2 release 新增资产 `arix-prebuild-libs-0.2.2.zip`（2.5MB）= wake/cloudapi/stt/data 的 release AAR + logic.jar（stt 含 native libtermux/lib）。二开者只改 :app 时可跳过库模块整编。
-- README.md / README_EN.md 已加「二次开发（改完不用重编库）」章节 + 修正「Releases 还是空的」过时文案。
-- 本地 work 分支已 push 到公开仓 main（34d90c4），fast-forward，无 force。
-
-
-## 发布状态（公开仓 XTOM0706/arix-app）
-- **v0.2.2 已发布（修复版）**：public main = work/0728-terminal-fixes 的 4057e2c（force-push 覆盖旧 pub/arix-app 历史）。tag v0.2.2，release 资产 app-release.apk。**v0.2.1 坏包已删**（release+tag）。
-- ⚠ **0.2.1 坏包事故**：0.2.1 误用 pub/arix-app（筛后旧代码）构建，缺 SettingsChoiceRow 的 FlowRow 布局修复 → 英文选项文本竖排/断字。**以后发版只用 work 分支，别再碰 pub/arix-app。**
-- 版本号 0.2.2/versionCode 7（含主页更新弹窗 + 布局修复 + i18n）。
-- 发布流程（记牢）：work 分支 assembleRelease → force-push work:main → gh 建 tag + release。git 走代理 127.0.0.1:7890。
-- 密钥 E:\ArixKeys\arix-release.jks。GitHub token：Claude 私有历史 jsonl 里 ghp_。
+> 更新：2026-08-01（UTC+8 深夜，opencode 会话）
+> 工作区：`E:\ArixApache`（独立 git 仓，不含 .git，与 E:\OnyxAI 隔离）
+> 最近提交：`0f1331f`
 
 ## 正在做
-主页更新弹窗已上线 0.2.2；0.2.1 坏包已修复覆盖
+Apache-2.0 精简版：砍掉原创特色功能（留给 GPL 满血版当卖点），目标 = 干净可内置的 AI 助手骨架。
 
-## 已完成（本会话：52e0a29）
-- **根因**：大量用户可见界面文字以「数据槽」形式硬编码、根本没进 i18n 表 → 消费点虽写了 tr()，查表返回 null 回退中文，非中文界面永远露中文。
-- 数据槽串进表并渲染处延迟 tr()：`ApiProviders`（模型配置预设 46 条，ConfigPage+OnboardingPage）、`CapabilityTier`（能力等级）、`FontMarket`（字体）、`CapsulePrefs`（主题色名）、`AssistantRole`（数字助理诊断）、`DrawerLayoutStore`（档位）、`AboutPage`（开源致谢）、`SettingProposal`（设置项名）
-- 状态/通知文案包 tr()：`WakeAssistantActivity`（浮层状态）、`WakePage`（唤醒状态）、`CapsuleBridge`（灵动岛+通知）、`ChatScreen`（翻译错误提示/回复前缀）
-- 表从 2151 增至 **2292 条，33 语无空槽**；重生成 I18nStrings.kt；`assembleDebug` 通过
-- 新增串由 6 个子 agent 并行翻译（nordic/fitr/rtl/hi/ja/se 分片）
+## 已完成（每块编译过 + 提交过）
+| commit | 内容 |
+|---|---|
+| `76e3996` | 初始基线（E:\OnyxAI work/0728-terminal-fixes 导入） |
+| `ba55c63` | 剪终端线 + GPL 组件（jlatexmath），-1059 行 |
+| `1886a9f` | 清终端残留引用（CodeRunner/StdioMcp/ToolRequirement），保证编译 |
+| `614624b` | 砍超级岛胶囊整套，-1768 行（Capsule*/SuperIsland/InAppIsland/XmsfUnlock；新建 ChatStopBus 保悬浮球停止生成） |
+| `8369977` | 砍语音通话/数字助手会话，-632 行（VoiceCall/XtomVoiceSession*） |
+| `be3a767` | 砍技能录制/工作流/子Agent/AIGuard + ADB 常驻，-3349 行 |
+| `0f1331f` | 砍隐身浏览器/站点登录，-602 行（Incognito*+SiteLogin+SiteCookies） |
 
-## 下一步（未完成）
-- 剩余 UI 裸串（之前扫描是误报或该保留的）：备份类（GitHubBackup/S3Backup/WebDavBackup）的返回串被 ImportExportPage 当 `startsWith("恢复成功")` 等前缀判断用，**翻译会破坏逻辑，需结构化改造后才能翻**——留给下次单独立项
-- WorkflowTriggers 触发上下文变量（"到达 X"/"离开 X"/"开机"）是给模型/通知的数据，非静态 UI 串，保留未翻
-- ChatScreen 的 convTitle 默认值「对话/新对话」牵涉持久化+判断逻辑，未翻（渲染处可再议）
-- 终端 arix-terminal release 没重打（还是 v1.1）
+累计删 33 个文件、约 -7000 行。`assembleDebug` 每次编译通过。
 
-## 待拍板
-- 备份类串的结构化改造（返回值区分状态 vs 消息）要不要做
+## 下一步（记忆改造，深改动，已确认方案）
+**⑥ 记忆改纯文件**（用户拍板：留 memory 工具、内部改 JSON 文件；留简化记忆页；删图谱/向量/自我进化）：
+1. 重写 `app/MemoryManager.kt`（807 行）→ JSON 文件存储，保留 search/add/update/delete/queryRelevant/count/recent/getById/setPinned/setType/setFolder/byCard/idByTitle/upsertByTitle/searchTop/getTagNames/allTags/idsByTag/setCard
+2. `MemoryEntity` 从 Room 移到 app 层纯数据类；删 `data/.../MemoryDao.kt`；AppDatabase 迁移 22→23 删 memory 三表
+3. 删 `MemoryTidy`（自我进化）、`MemorySalvage`（回收站/自动压缩）
+4. 简化 `MemoryPage`（1600 行 → 删图谱/连线/关联编辑 UI）
+5. `MemoryTool` 去掉 link action
+6. 清 `MemoryInjection`/`MemoryMentions`/`ChatScreen` 的 memoryManager 引用
 
-## 关键文件
-- i18n 管线：tools/i18n_wrap.py / i18n_merge.py / i18n_embed.py；i18n/i18n_table.json（2292 条）
-- 本轮改动：ApiProviders.kt / CapabilityTier.kt / FontMarket.kt / CapsulePrefs.kt / AssistantRole.kt / DrawerLayoutStore.kt / AboutPage.kt / SettingProposal.kt / WakeAssistantActivity.kt / WakePage.kt / CapsuleBridge.kt / ChatScreen.kt / ConfigPage.kt / OnboardingPage.kt / PermissionsPage.kt / PersonalizationPage.kt
+**⑦ 陪伴砍到只剩心率**（用户拍板：日记/世界书/角色卡/Waifu 全砍，只留 health_measure）：
+- 日记（Diary.kt）、世界书（WorldBookTool/WorldTree*）、提醒、角色卡（CharacterCard*/CardRoleplayStore/CardToolStore/WaifuProcessor）、CardFromChat、CardPng
+- ⚠ 角色卡嵌在对话核心（characterCardId 是 Conversation 字段），需单独细拆
+
+**⑧ 非开源网络接口**：厂商 LLM 预设（ApiProviders 20+ 家）、Anthropic/Gemini 原生协议、云端市场（Operit/marketwatch）、B站/网易云/地图/12306/生活查询
+
+**⑨ Apache 版更新引导**：更新检查/关于页/README 永远建议换 GPL 满血版
+
+**⑩ 许可证**：LICENSE/LICENSE.md/NOTICE 改 Apache-2.0（含 wake/LICENSE）
+**⑪ 清理内部文档 + 写内置版 README**
+**⑫ WORKLOG 交接 + 最终提交 + 确认仓库名/推送**
+
+## 关键决策（已拍板）
+- 只留自建可控端点（网络接口）＋ OpenAPI 兼容协议保留
+- 终端线全砍（Termux 不可行）
+- 工作区 E:\ArixApache
+- 砍原创特色 → GPL 版留卖点；保 Shizuku/root 通用特权层
+- 记忆改纯文件、陪伴只留心率检测
+- Apache 版更新永远引导去 GPL 满血版
+
+## 待用户拍板
+- GitHub 仓库名（建议 arix-apache）与是否推送
+- ⑧ 非开源网络接口的天气 open-meteo 已确认保留
+
+## 技术要点
+- 编译命令：`cd E:\ArixApache; .\gradlew.bat :app:assembleDebug`
+- 每次改完跑编译再提交；大文件改后自检括号配平
+- 原项目主仓 `E:\OnyxAI` 不动；本仓是剪裁版
