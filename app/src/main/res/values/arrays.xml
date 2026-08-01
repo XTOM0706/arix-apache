@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Xposed 模块作用域：LSPosed 据此自动建议勾选的进程（超级岛焦点通知解锁只需这两个）。 -->
+    <string-array name="xposed_scope">
+        <item>com.android.systemui</item>
+        <item>com.xiaomi.xmsf</item>
+    </string-array>
+</resources>

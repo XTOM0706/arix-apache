@@ -1,0 +1,161 @@
+Arix（代号「涅槃」）
+Copyright 2025-2026 Arix
+
+本产品整体采用 GNU Affero General Public License v3.0 only（AGPL-3.0-only，见 LICENSE），
+并依 AGPL 第 7(b)(c) 条附加「保留署名」与「标明修改」条款（见 LICENSE.md）。
+以下第三方组件版权与许可归各自作者所有。
+
+This product is licensed under the GNU Affero General Public License v3.0 only
+(AGPL-3.0-only, see LICENSE), with additional terms under AGPL sections 7(b) and 7(c)
+requiring preservation of attribution and marking of modifications (see LICENSE.md).
+It bundles the third-party components below; their copyrights and licenses belong to
+their authors.
+
+注：Apache-2.0 与 MIT 均单向兼容 AGPL-3.0，可并入本作品；下列组件本身仍各自持有其原许可。
+Note: Apache-2.0 and MIT are one-way compatible with AGPL-3.0 and may be incorporated
+here; the components below remain under their own licenses.
+
+================================================================================
+第三方组件 / Third-party components
+================================================================================
+
+ONNX Runtime (com.microsoft.onnxruntime) — MIT — Microsoft
+  https://github.com/microsoft/onnxruntime
+
+sherpa-onnx (语音识别，vendored) — Apache-2.0 — k2-fsa / Xiaomi
+  https://github.com/k2-fsa/sherpa-onnx
+
+Silero VAD 模型 (silero_vad.onnx) — MIT — Silero Team
+  https://github.com/snakers4/silero-vad
+
+microWakeWord (唤醒模型/框架) — Apache-2.0 — OHF-Voice / ESPHome
+  https://github.com/OHF-Voice/micro-wake-word
+
+TensorFlow Lite / LiteRT (org.tensorflow:tensorflow-lite) — Apache-2.0 — The TensorFlow Authors
+  https://github.com/tensorflow/tensorflow
+
+Jetpack Compose · AndroidX — Apache-2.0 — The Android Open Source Project
+Kotlin · Kotlin Coroutines — Apache-2.0 — JetBrains
+Coil (图片加载) — Apache-2.0 — Coil Contributors
+OkHttp (HTTP 客户端) — Apache-2.0 — Square, Inc.
+
+JLaTeXMath-Android (ru.noties:jlatexmath-android，公式渲染) — GPL-2.0 带链接例外
+  该库许可明文授予「链接例外」：允许与任意许可的独立模块链接生成可执行文件，并按自选条款
+  分发（未修改其自身源码）。本作品为 AGPL-3.0，与 GPL-2.0 家族本可有版本兼容问题，但该
+  链接例外已明文豁免，故捆绑无碍。其内置字体分别为 SIL OFL / 公共领域 / Knuth 许可。
+  https://github.com/noties/jlatexmath-android
+
+Termux terminal-emulator / terminal-view (vendored 为 :terminal-emulator、:terminal-view 模块)
+  — Apache-2.0 — Termux 贡献者 / Fredrik Fornwall；上溯 Android Terminal Emulator (jackpal) — Apache-2.0
+  这两个终端组件在 Termux 仓库中即以 Apache-2.0 提供（是 Termux 整体 GPLv3 的明确例外），
+  故可与本作品一同分发。含其 pty JNI 原生库 libtermux.so。未改动其许可与署名。
+  **本作品对其做了修改**（Apache-2.0 §4(b) 要求声明，源码内均以「Arix 修改」注释标出）：
+    · TerminalRenderer：新增 `mHideCursor` 开关（置位时不绘制光标）与 `getCellTopOffset()`；
+    · TerminalView：新增 `setCursorHidden(boolean)`，并在重建 renderer 时保持该状态。
+    用途：把光标交给上层自绘的动画浮层（平滑位移/拖尾）。
+    · TerminalView 的 InputConnection：覆写 `getTextBeforeCursor()`（返回占位文本）与
+      `getTextAfterCursor()`，并新增 `setImeDeleteRepeatWorkaround(boolean)` 开关。
+      用途：终端的 Editable 恒为空，输入法据此判定「无内容可删」而不肯连发退格；
+      回占位文本后软键盘的长按退格才能连续删除。
+    · TerminalRenderer：新增 `mSpriteEnabled` 开关与 `mSprites` 字段；构造函数创建 sprite 绘制器；
+      `render()` 增加 sprite 码点识别（跳过字宽测量与横向缩放，并按 sprite / 非 sprite 拆分绘制 run）；
+      `drawTextRun()` 增加 `isSpriteRun` 形参，为真时改用几何绘制替代 `Canvas.drawTextRun`。
+    · 新增文件 `com.termux.view.TerminalSprites`（**Arix 原创，非上游代码**）：
+      程序化绘制 U+2500–U+257F（制表符）、U+2580–U+259F（块元素）、U+2800–U+28FF（盲文点阵）、
+      U+E0B0–U+E0B7（powerline）。
+      用途：这些字形不再依赖用户所装字体，按 cell 网格几何绘制以保证严丝合缝对齐。
+    · TerminalRow：新增 `SHELL_MARK_*` 常量与 `mShellMark` 字段，并在 `clear(long)` 中复位。
+    · TerminalBuffer：新增 `setShellMark` / `getShellMark` / `clearShellMarks`（两个重载）；
+      `blockCopy()` 在整行纵向搬运时一并搬运 `mShellMark`。
+    · TerminalEmulator：新增 `mShellCwd` / `mLastCommandExitCode` 字段与
+      `getShellCwd()` / `getLastCommandExitCode()` / `getShellMark(int)` 接口；
+      `doOscSetTextParameters()` 增加 `case 7`（当前工作目录）与 `case 133`（语义提示符标记）两个分支，
+      并在 ED / IL / DL / 进备用屏 / RIS 处失效相应标记。
+      用途：实现 shell integration 语义标记（OSC 7 / OSC 133），供上层做提示符跳转、
+      整段输出选取、命令退出码提示等。**未改动既有 OSC 0/1/2/4/10/11/12/52/104/110-119 的处理。**
+    · TerminalEmulator（安全加固，改动了上游既有行为）：
+      - DCS termcap/terminfo 查询（`ESC P + q`）不再把请求内容原样写回 pty：只回应「长度为偶数
+        且每个字符都是十六进制数字」的名字，其余一律不回应。上游会把未经过滤的载荷回写到
+        shell 的 stdin，而 DCS 收集器连换行都照收，换行之后那段会被当命令执行。
+      - OSC 7 的路径在赋值前校验：必须绝对路径、长度 ≤4096、不含 <0x20 与 0x7F 字节、不含 `..` 段；
+        URI 的 authority 段非空且不是 localhost 时整条拒收。校验不过即丢弃，不做「尽力修正」。
+    · TerminalEmulator：在 SD（`CSI T`）、RI（`ESC M`）、DECALN（`ESC # 8`）以及带左右边距的滚动
+      这四处补上语义标记的失效处理（原先内容被搬走/清空而标记留在原地，会导致标记错位一行或残留）。
+    · TerminalEmulator / TerminalBuffer / TerminalRow：语义标记增加「提示符轮次」（epoch）——
+      `TerminalRow` 新增 `mShellMarkEpoch` 与 `SHELL_MARK_PROMPT_INPUT`（A 与 B 同行时的合并态），
+      `TerminalBuffer.setShellMark` 增加轮次形参、新增 `getShellMarkEpoch`，`blockCopy` 与
+      `clearShellMarks` 一并搬运/清除轮次。
+      用途：区分「本轮提示符标记」与「上一轮残留」，否则就地重绘类程序留下的旧标记会永久挡掉
+      后续命令的输出起点标记。
+    · TerminalRenderer（改动了上游既有行为，非 sprite 路径同样受影响）：背景矩形与光标矩形的
+      左右边界改为按**绝对列号**取整（`Math.round(列号 * mFontWidth)`），并移出字形横向缩放的
+      坐标系、绘制时临时关闭抗锯齿。
+      用途：上游用未取整的小数坐标 + 开着 AA 的画笔画背景，相邻矩形共用小数边界时会透出约 22.5%
+      的旧背景，表现为 1px 偏暗竖线；且与按整数格边界绘制的 sprite 之间最多差半像素。
+    · TerminalView：新增 `setSpriteEnabled(boolean)`，并把 renderer 重建时的状态重放收口到
+      `applyRendererSettings()`（原先 `setTextSize`/`setTypeface` 重建 renderer 时会静默丢弃该开关）。
+    · TerminalSprites（Arix 原创文件）：构造函数增加 `Paint` 形参，用于让 sprite 自绘的下划线／
+      删除线与 `Paint.setUnderlineText` 的基线偏移一致，避免同一行内框线字与普通文字的装饰线错位成台阶。
+    除上述之外未改动其行为。
+  https://github.com/termux/termux-app
+
+Termux bootstrap (terminal/src/main/assets/bootstrap-aarch64.tar.xz) — 官方发行版，仅做体积裁剪与重新压缩
+  独立「Arix 终端」App 里解压的是官方 aarch64 bootstrap，**二进制一律未经修改**
+  （不改写任何前缀，也不重编译）。上游发的是 .zip，我们改用 .tar.xz 重新压缩（内容不变，
+  见 tools/pack_bootstrap.py）。为适配手表存储，重新打包时**只删除了文档类文件**：
+  share/man、share/info、include（C 头文件）、libexec/installed-tests、
+  share/doc 下的 README/changelog/示例，以及非中英文的 share/locale。
+  **许可文本全部保留**（share/doc/*/copyright、share/LICENSES/*、各包 licenses/ 目录，共 94 份），
+  SYMLINKS.txt 同步剔除了指向已删目录的条目。未删任何可执行文件、库或配置。
+  其中各软件包（bash / coreutils / apt / dpkg / termux-tools 等）的版权与许可归各自上游项目
+  所有（GPL / Apache / MIT / BSD 等，见运行时内 share/doc/*/copyright 与 share/LICENSES/）。
+  完整未裁剪的原件可从上游直接获取：
+  https://github.com/termux/termux-packages/releases
+
+Linux 发行版容器镜像（Alpine / Ubuntu / Debian / Kali / Fedora / AlmaLinux / openSUSE / Arch ARM / Void 等）
+  —— **不随本作品分发**。用户在「运行环境」页点安装时，才由本 App 从对应上游镜像仓库
+  （Docker Hub / ghcr.io / quay.io，或用户指定的镜像站）实时拉取到设备本地。
+  各发行版及其中软件包的版权与许可归各自上游所有，见容器内 /usr/share/doc/。
+  本作品只提供拉取与运行的工具，不对镜像内容主张任何权利。
+
+proot (terminal/src/main/assets/proot/{proot,loader,loader32}) — GPL-2.0-or-later — proot 贡献者
+  用于把 Termux 写死的 /data/data/com.termux/files 前缀虚拟重定向到本 App 可写目录，
+  从而能安装未经改写的官方软件包。**未作任何修改**，以独立可执行文件形式随包分发、由本
+  App fork/exec 调用（聚合关系，不构成对本作品的衍生）。取自 Termux 官方软件包源
+  packages.termux.dev；对应完整源码见下方上游地址，亦可向本项目索取所分发版本的源码。
+  https://github.com/termux/proot   https://github.com/proot-me/proot
+
+libtalloc (terminal/src/main/assets/proot/libtalloc.so.2) — LGPL-3.0-or-later — Samba Team / Andrew Tridgell
+  proot 的运行时依赖，未作修改，以独立动态库形式随包分发（动态链接，可替换）。
+  https://gitlab.com/samba-team/samba/-/tree/master/lib/talloc
+
+libandroid-shmem (terminal/src/main/assets/proot/libandroid-shmem.so) — BSD-3-Clause — Termux 贡献者
+  SysV 共享内存垫片（Android bionic 无此实现），proot 运行所需，未作修改。
+  https://github.com/termux/libandroid-shmem
+
+--------------------------------------------------------------------------------
+图形化（X11 / VNC）—— 说明本作品**没有**分发什么
+--------------------------------------------------------------------------------
+
+X server（termux-x11 / lorie 等）—— **不随本作品分发，一行代码都不包含**。
+  termux-x11 是 GPL-3.0：把它编进本 APK 会让整个 APK 成为 GPLv3 派生作品。
+  因此本作品只在运行时**探测用户自行安装的、独立的 X server 应用**，用 app_process
+  以本应用的 uid 启动其入口类，并通过公开的 X11 协议（unix socket）与之通信。
+  这与任何 X 客户端连接 Xorg 的关系相同，属于聚合 / 进程间通信，不构成派生作品。
+  （此为项目方的法律判断，非律师意见。）
+
+Xvnc / TigerVNC、以及容器内 apt/pkg 装的一切图形软件 —— **不随本作品分发**，
+  由用户在设备本地按需安装，版权与许可归各自上游所有。
+
+VNC(RFB) 客户端（terminal/.../gfx/rfb/）—— **本项目原创实现**。
+  现有 Android VNC 客户端（AVNC、bVNC、LibVNCServer/libvncclient、TightVNC viewer）
+  全部是 GPL-2.0/3.0，链接进本作品会传染整包；noVNC 虽为 MPL-2.0，但需在容器内额外
+  安装 websockify。故按 RFC 6143 自行实现，未参考亦未搬运上述任何项目的源码。
+
+================================================================================
+关于 wake 模块 / About the wake module
+================================================================================
+wake/ 唤醒模块为原创 clean-room 实现（见 wake/LICENSE、wake/NOTICE），随本作品采用
+AGPL-3.0-only。它不衍生自任何 GPL/LGPL 源码——clean-room 重写的目的是让 Arix 成为
+独立项目（参考他人思路而非搬运其代码），此目标与本作品选用何种许可无关，故换用 AGPL
+后该结论依然成立。

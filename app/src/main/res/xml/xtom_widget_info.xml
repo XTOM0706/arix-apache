@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Arix 小组件元数据：~2x1、不自动轮询刷新(updatePeriodMillis=0)、可缩放。
+     previewImage 用系统自带 drawable（本项目无自有 mipmap/drawable 图标），
+     previewLayout(API31+) 直接拿真实布局当预览。 -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="110dp"
+    android:minHeight="40dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="1"
+    android:updatePeriodMillis="0"
+    android:initialLayout="@layout/xtom_widget"
+    android:previewLayout="@layout/xtom_widget"
+    android:previewImage="@android:drawable/sym_def_app_icon"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen" />

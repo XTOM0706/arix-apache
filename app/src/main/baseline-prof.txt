@@ -1,0 +1,31 @@
+# ============================================================
+# Baseline Profile —— Arix（手工种子版 starter）
+#
+# 作用：AGP 打 release 时把本文件编成 ART 基线配置塞进 APK(assets/dexopt/baseline.prof)，
+# profileinstaller 在启动时装进 ART → 让下列热点类/方法提前 AOT 编译，减少启动/首帧/滚动的 JIT 抖动。
+# 仅 release 生效（debug 走解释/JIT，不读此文件）。
+#
+# 规则语法(HRF)：
+#   H=Hot S=Startup P=Post-startup；`**` 跨包递归通配，`->**(**)**` 匹配类内全部方法。
+#   `L...;` 行=标记该类做 AOT。
+#
+# 范围：只种 App 自己的代码——Compose/AndroidX 库各自带了官方 baseline profile，不用重复种。
+# 聚焦 UI 与聊天流式热路径；后台工具类不常在启动/滚动热路径上，未全量纳入以免徒增体积/装机时间。
+#
+# ⚠ 这是「无测量的种子」，不如在真机(arm64 手表)用 Macrobenchmark 采的准。
+#    要生成测量版：接 arm64 设备跑 `./gradlew :app:generateBaselineProfile`（需 baselineprofile 生成模块，见 README/构建说明），
+#    生成的 profile 会覆盖/补充本文件。
+# ============================================================
+
+# —— App UI 全量（含 ChatScreen/MarkdownText/MainActivity/ui.*/theme.* 等 Compose 热点）——
+HSPLcom/arix/app/**->**(**)**
+SPLcom/arix/app/**->**(**)**
+Lcom/arix/app/**;
+
+# —— 云端 API 客户端：聊天流式解析(SSE/增量)属滚动/流式热路径 ——
+HSPLcom/arix/cloudapi/**->**(**)**
+Lcom/arix/cloudapi/**;
+
+# —— 持久层：Room 实体/DAO 在首屏加载对话时即命中 ——
+HSPLcom/arix/data/**->**(**)**
+Lcom/arix/data/**;

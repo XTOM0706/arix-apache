@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Arix 桌面小组件布局（RemoteViews，仅用系统支持的控件；watch/手机可点）。
+     整块 root(@id/xtom_widget_root) 绑 PendingIntent → 打开 MainActivity 发起新对话。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/xtom_widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:background="@drawable/xtom_widget_bg"
+    android:padding="10dp">
+
+    <TextView
+        android:id="@+id/xtom_widget_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Arix"
+        android:textColor="#FFFFFFFF"
+        android:textSize="15sp"
+        android:textStyle="bold"
+        android:maxLines="1"
+        android:ellipsize="end" />
+
+    <!-- 可选：最近一条对话标题（默认隐藏；有值时由 XtomWidget 置为 VISIBLE） -->
+    <TextView
+        android:id="@+id/xtom_widget_recent"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="1dp"
+        android:textColor="#B3FFFFFF"
+        android:textSize="10sp"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:visibility="gone" />
+
+    <!-- 大点按区（视觉胶囊；实际点击落在整块 root 上，命中面积最大） -->
+    <TextView
+        android:id="@+id/xtom_widget_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:paddingLeft="16dp"
+        android:paddingRight="16dp"
+        android:paddingTop="7dp"
+        android:paddingBottom="7dp"
+        android:background="@drawable/xtom_widget_button_bg"
+        android:text="开始新对话"
+        android:textColor="#FFFFFFFF"
+        android:textSize="12sp"
+        android:maxLines="1" />
+
+</LinearLayout>

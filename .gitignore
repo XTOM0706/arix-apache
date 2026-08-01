@@ -1,0 +1,42 @@
+*.iml
+.gradle/
+**/build/
+/local.properties
+/.idea
+.DS_Store
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+stt/src/main/assets/models/
+
+# CodeGraph 本地索引
+.codegraph/
+
+# 内嵌 Termux bootstrap：140MB 构建产物，超 GitHub 100MB 单文件上限，可由 termux-packages 重建，不入库
+app/src/main/assets/bootstrap-*.zip
+# 终端 App 的官方 Termux bootstrap（~30MB，可由 termux-packages release 重下，不入库；proot 小件入库）
+# 重下：见 TODO-TERMINAL-APP.md「素材」。proot/loader/loader32/libtalloc.so.2 是小件，照常提交。
+# assets 里那份是**裁剪过的**（tools/slim_bootstrap.py 从原件生成，见 NOTICE）；
+# bootstrap-src/ 放未裁剪原件，同样不入库。
+terminal/src/main/assets/bootstrap-*.zip
+terminal/src/main/assets/bootstrap-*.tar.xz
+terminal/bootstrap-src/
+
+# 构建日志(临时)
+build_assemble.log
+build_compile.log
+
+# 挪出打包范围的第三方大件（模型改为运行时按需下载，留个本地备份免得重下）
+.local-assets/
+
+# Kotlin build cache
+.kotlin/
+
+# 会话构建日志（临时）
+build_*.log
+
+# 签名密钥：本项目的 .jks 放在仓库树之外（见 local.properties 的 arix.storeFile），
+# 这两条只是兜底——万一有人把密钥拷进仓库，也别让它被提交上去。
+*.jks
+*.keystore

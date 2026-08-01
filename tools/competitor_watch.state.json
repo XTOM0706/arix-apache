@@ -1,0 +1,76 @@
+{
+  "repo:AAswordman/Operit": {
+    "last_sha": "64aab3d04826c5489fe1d9afbe3d2ae1688c5ad7",
+    "last_release": "v1.12.0"
+  },
+  "repo:rikkahub/rikkahub": {
+    "last_sha": "1ff465d12fd11800734b7d2c3f331352ecbb7b1d",
+    "last_release": "2.4.1"
+  },
+  "repo:Chevey339/kelivo": {
+    "last_sha": "c8c9ff37c644ab2e121b671fa2628eca1aa88b1e",
+    "last_release": "v1.1.17"
+  },
+  "repo:SelectXn00b/HermesApp": {
+    "last_sha": "5b241128837a2f501dccd7578f8e90ff737935a0",
+    "last_release": "v20250504-0830"
+  },
+  "repo:sue1231513/orangechat": {
+    "last_sha": "6a5e18bfa424be470eb712ae8b409eab5ff39914"
+  },
+  "market:operit": {
+    "android-dev-agent": "1.0.0",
+    "zero-termux-toolkit": "1.0.0",
+    "jadx-toolkit": "1.0.0",
+    "bilibili-tools": "1.0.1",
+    "system-tools-pro": "1.0.0",
+    "media-display": "2.0.0",
+    "apk-direct-installer": "1.0.0",
+    "artifact": "1.0.0",
+    "universal-draw": "1.0.0",
+    "music-studio": "1.1.0",
+    "com-vael-proactive-contact-workflow": "1.0.3",
+    "com-operit-sidebar-coread": "1.0.0",
+    "com-operit-diary": "1.0.0",
+    "com-operit-moodlet": "0.3.0",
+    "github-com-wwe13309359042-spec-animated-engine": "v1",
+    "github-com-weinicole14-android-apk-builder-skill": "v1",
+    "github-com-kkkkhazix-khazix-skills-tree-main-neat-freak": "v1",
+    "github-com-leilaomi-operit-coding-skills": "v1",
+    "raw-githubusercontent-com-tanweai-pua-main-skills-pua-skill-md": "v1",
+    "github-com-zscole-model-hierarchy-skill-tree-main": "v1",
+    "github-com-gkeyes-lsposed-module-update-skill": "v1",
+    "github-com-bingyang1-operit-skills-anime-epic-immersion-generator": "v1",
+    "github-com-kikiba0152-character-card-converter-alskills": "v1",
+    "github-com-francyjglisboa-agent-skill-creator": "v1",
+    "github-com-openai-skills-tree-main-skills-curated-develop-web-game": "v1",
+    "github-com-linxstayrs-operitforge-tree-main-skills-ob-arrogant-cat": "v1",
+    "github-com-7278hdhsjsj-operit-rigid-development-rules": "v3.0.0",
+    "github-com-op7418-nanobanana-ppt-skills-tree-main": "v1",
+    "github-com-lookyilook-test-repo-5914": "latest",
+    "github-com-aas-ee-open-websearch": "v1",
+    "github-com-linxstayrs-operitforge-tree-main-skills-ob-auto-dream": "v1",
+    "github-com-zhanghandong-makepad-skills-tree-main-skills-evolution": "v1",
+    "github-com-vercel-labs-agent-skills-tree-main-skills-react-native-skills": "v1",
+    "github-com-modelcontextprotocol-servers-tree-main-src-sequentialthinking": "v1",
+    "github-com-exa-labs-exa-mcp-server": "v1",
+    "github-com-r131219-shiro-memory-mcp": "v1",
+    "github-com-bullobi-amap-full-nav-weather-traffic": "v1",
+    "github-com-wangshunnn-bilibili-mcp-server": "v1",
+    "github-com-spiritherb-mcp-research-router": "v1",
+    "github-com-raineiris-operit-xhs-reader-mcp": "v1",
+    "github-com-missionsquad-mcp-github": "v1",
+    "github-com-gongrzhe-office-word-mcp-server": "v1",
+    "github-com-joooook-12306-mcp": "v1",
+    "github-com-memtensor-memos-api-mcp": "v1",
+    "github-com-bullobi-amap-nav-weather": "v1",
+    "github-com-regenrek-deepwiki-mcp": "v1",
+    "github-com-dandanllab-legadoskill": "v1",
+    "github-com-lianginx-bilibili-mcp": "v1",
+    "github-com-firecrawl-firecrawl-mcp-server": "v1",
+    "github-com-haris-musa-excel-mcp-server": "v1",
+    "github-com-cantian-ai-bazi-mcp": "v1",
+    "github-com-leilaomi-operit-open-design-mcp": "v1"
+  },
+  "_updated_at": "2026-07-13T04:03:49.856895+00:00"
+}

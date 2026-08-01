@@ -1,0 +1,523 @@
+package com.arix.tool
+
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.net.URLEncoder
+
+private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
+
+// 地图 API key（可选；填了 route/search 才返回距离/时长/POI 数据，否则只打开地图 App 导航）
+object MapPrefs {
+    private const val P = "xtom_map"
+    private fun p(c: Context) = c.getSharedPreferences(P, Context.MODE_PRIVATE)
+    fun amapKey(c: Context) = (p(c).getString("amap", "") ?: "").trim()
+    fun googleKey(c: Context) = (p(c).getString("google", "") ?: "").trim()
+    fun set(c: Context, amap: String, google: String) = p(c).edit().putString("amap", amap.trim()).putString("google", google.trim()).apply()
+}
+
+// ============================================================
+// 地图 / 导航 —— 一个工具多用(navigate/search/route)。
+// navigate=打开地图App(高德优先)接管逐步导航,免key;search/route=有 API key 时返回真实 POI/距离时长数据(高德优先,海外Google),没key则退回打开App。
+// ============================================================
+class MapTool(private val context: Context) : Tool {
+    override val name = "map"
+    override val description = "地图/导航：action=navigate 打开地图App导航(免key)；search 搜地点；nearby 搜当前位置附近(destination填品类如'餐厅/药店',需定位权限+高德key,带距离就近排序)；route 算 起点→终点 距离时长(需高德/Google key)。destination=终点/品类,origin=起点,mode=driving/walking/transit,radius=nearby半径米。"
+    override val parameters = JSONObject().apply {
+        put("type", "object")
+        put("properties", JSONObject().apply {
+            put("action", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("navigate", "search", "nearby", "route"))); put("description", "navigate=导航 / search=搜地点 / nearby=搜当前位置附近 / route=算距离时长") })
+            put("destination", JSONObject().apply { put("type", "string"); put("description", "目的地/搜索词，如「北京南站」「附近咖啡」；action=nearby 时填品类如「餐厅/药店」") })
+            put("origin", JSONObject().apply { put("type", "string"); put("description", "起点（action=route 用），如「上海站」") })
+            put("mode", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("driving", "walking", "transit"))); put("description", "出行方式，默认 driving") })
+            put("radius", JSONObject().apply { put("type", "integer"); put("description", "action=nearby 搜索半径（米），默认 3000，范围 200–50000") })
+        })
+        put("required", JSONArray(listOf("destination")))
+    }
+
+    override suspend fun execute(params: JSONObject): ToolResult = withContext(Dispatchers.IO) {
+        val dest = params.optString("destination", "").trim()
+        if (dest.isBlank()) return@withContext ToolResult("请提供 destination（目的地）", isError = true)
+        val action = params.optString("action", "navigate")
+        val mode = params.optString("mode", "driving")
+        val amapKey = MapPrefs.amapKey(context); val gKey = MapPrefs.googleKey(context)
+        when (action) {
+            "search" -> {
+                if (amapKey.isNotBlank()) amapSearch(amapKey, dest)?.let { return@withContext ToolResult(it) }
+                if (gKey.isNotBlank()) googleSearch(gKey, dest)?.let { return@withContext ToolResult(it) }
+                openMap(dest, search = true, mode)
+            }
+            "nearby" -> {
+                if (amapKey.isBlank()) return@withContext ToolResult("附近搜索需要高德 API key（设置→应用设置→地图 Key）", isError = true)
+                val ll = currentLatLon() ?: return@withContext ToolResult(
+                    "拿不到当前位置（${com.arix.app.LocationSignals.unavailableReason(context) ?: "定位超时，室内可能收不到信号"}）", isError = true)
+                amapAround(amapKey, ll.first, ll.second, dest, params.optInt("radius", 3000))?.let { return@withContext ToolResult(it) }
+                    ?: return@withContext ToolResult("附近没搜到「$dest」")
+            }
+            "route" -> {
+                val origin = params.optString("origin", "").trim()
+                if (origin.isNotBlank()) {
+                    if (amapKey.isNotBlank()) amapRoute(amapKey, origin, dest, mode)?.let { return@withContext ToolResult(it) }
+                    if (gKey.isNotBlank()) googleRoute(gKey, origin, dest, mode)?.let { return@withContext ToolResult(it) }
+                }
+                openMap(dest, search = false, mode)   // 无 key/无起点 → 打开导航
+            }
+            else -> openMap(dest, search = false, mode)
+        }
+    }
+
+    private fun openMap(dest: String, search: Boolean, mode: String): ToolResult {
+        val style = when (mode) { "walking" -> 4; "transit" -> 3; else -> 2 }
+        fun open(uri: String, pkg: String? = null) = try {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)).apply { pkg?.let { setPackage(it) }; addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }); true
+        } catch (_: Exception) { false }
+        val amap = if (search) "androidamap://poi?sourceApplication=Arix&keyword=${enc(dest)}&dev=0"
+        else "androidamap://keywordNavi?sourceApplication=Arix&keyword=${enc(dest)}&style=$style"
+        if (open(amap, "com.autonavi.minimap")) return ToolResult("已用高德地图打开${if (search) "搜索" else "导航"}：$dest")
+        if (open("geo:0,0?q=${enc(dest)}")) return ToolResult("已打开地图：$dest")
+        return if (open("https://uri.amap.com/search?keyword=${enc(dest)}&src=arix")) ToolResult("已在网页地图打开：$dest")
+        else ToolResult("打不开地图（没装地图 App/浏览器）", isError = true)
+    }
+
+    // ---- 高德 Web API ----
+    private fun amapSearch(key: String, kw: String): String? {
+        val j = httpGet("https://restapi.amap.com/v3/place/text?keywords=${enc(kw)}&offset=5&key=$key") ?: return null
+        val pois = JSONObject(j).optJSONArray("pois") ?: return null
+        if (pois.length() == 0) return null
+        return buildString {
+            append("📍 「$kw」附近结果：\n")
+            for (i in 0 until minOf(pois.length(), 5)) { val o = pois.optJSONObject(i) ?: continue
+                append("${i + 1}. ${o.optString("name")}  ${o.optString("address")}").append("\n") }
+        }.trim()
+    }
+    // 附近搜索：当前定位 + 高德周边 API（就近排序，带距离）。借鉴橘瓣 ExploreNearby。
+    // 缓存不新鲜就主动定位一次：只读 getLastKnownLocation 会「概率性拿不到位置」——那只是系统缓存，
+    // 没有别的 App 最近定位过就是 null。见 LocationSignals。
+    private suspend fun currentLatLon(): Pair<Double, Double>? = try {
+        com.arix.app.LocationSignals.current(context)?.let { it.latitude to it.longitude }
+    } catch (_: Exception) { null }
+
+    private fun amapAround(key: String, lat: Double, lon: Double, kw: String, radius: Int): String? {
+        val j = httpGet("https://restapi.amap.com/v3/place/around?location=$lon,$lat&keywords=${enc(kw)}&radius=${radius.coerceIn(200, 50000)}&sortrule=distance&offset=8&key=$key") ?: return null
+        val pois = JSONObject(j).optJSONArray("pois") ?: return null
+        if (pois.length() == 0) return null
+        return buildString {
+            append("📍 附近的「$kw」（就近排序）：\n")
+            for (i in 0 until minOf(pois.length(), 8)) { val o = pois.optJSONObject(i) ?: continue
+                val dist = o.optString("distance").toIntOrNull()?.let { "  ${it}m" } ?: ""
+                append("${i + 1}. ${o.optString("name")}$dist  ${o.optString("address")}\n") }
+        }.trim()
+    }
+
+    private fun amapGeo(key: String, addr: String): String? =
+        httpGet("https://restapi.amap.com/v3/geocode/geo?address=${enc(addr)}&key=$key")?.let {
+            JSONObject(it).optJSONArray("geocodes")?.optJSONObject(0)?.optString("location")?.takeIf { s -> s.isNotBlank() }
+        }
+    private fun amapRoute(key: String, origin: String, dest: String, mode: String): String? {
+        val o = amapGeo(key, origin) ?: return null
+        val d = amapGeo(key, dest) ?: return null
+        val ep = when (mode) { "walking" -> "walking"; "transit" -> "transit/integrated"; else -> "driving" }
+        val extra = if (mode == "transit") "&city=${enc(origin)}" else ""
+        val j = httpGet("https://restapi.amap.com/v3/direction/$ep?origin=$o&destination=$d&key=$key$extra") ?: return null
+        val root = JSONObject(j).optJSONObject("route") ?: return null
+        val path = root.optJSONArray("paths")?.optJSONObject(0) ?: root.optJSONArray("transits")?.optJSONObject(0)
+        val dist = path?.optString("distance")?.toIntOrNull()
+        val dur = path?.optString("duration")?.toIntOrNull()
+        return "🧭 $origin → $dest（$mode）" + (dist?.let { "  约 ${"%.1f".format(it / 1000.0)} 公里" } ?: "") + (dur?.let { "  约 ${it / 60} 分钟" } ?: "")
+    }
+
+    // ---- Google Maps API（海外）----
+    private fun googleSearch(key: String, kw: String): String? {
+        val j = httpGet("https://maps.googleapis.com/maps/api/place/textsearch/json?query=${enc(kw)}&key=$key") ?: return null
+        val r = JSONObject(j).optJSONArray("results") ?: return null
+        if (r.length() == 0) return null
+        return buildString { append("📍 $kw:\n"); for (i in 0 until minOf(r.length(), 5)) { val o = r.optJSONObject(i) ?: continue; append("${i + 1}. ${o.optString("name")}  ${o.optString("formatted_address")}\n") } }.trim()
+    }
+    private fun googleRoute(key: String, origin: String, dest: String, mode: String): String? {
+        val j = httpGet("https://maps.googleapis.com/maps/api/directions/json?origin=${enc(origin)}&destination=${enc(dest)}&mode=$mode&key=$key") ?: return null
+        val leg = JSONObject(j).optJSONArray("routes")?.optJSONObject(0)?.optJSONArray("legs")?.optJSONObject(0) ?: return null
+        return "🧭 $origin → $dest（$mode）  ${leg.optJSONObject("distance")?.optString("text") ?: ""}  ${leg.optJSONObject("duration")?.optString("text") ?: ""}".trim()
+    }
+
+    private fun httpGet(url: String): String? = try {
+        val c = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply { connectTimeout = 10000; readTimeout = 12000; setRequestProperty("User-Agent", "Arix/1.0") }
+        if (c.responseCode in 200..299) c.inputStream.bufferedReader().use { it.readText() } else { c.errorStream?.close(); null }
+    } catch (_: Exception) { null }
+}
+
+// ============================================================
+// 火车票查询 —— 12306 公开接口。站名→电报码(缓存)，再查余票。best-effort：12306 反爬/改接口时优雅失败。
+// ============================================================
+class TrainTicketTool : Tool {
+    override val name = "train_tickets"
+    override val description = "查火车票余票(12306)。from=出发站/城市、to=到达站/城市、date=日期(YYYY-MM-DD，默认今天)。返回车次/时刻/历时/各席别余票。"
+    // 模型侧英文（见 Tool.llmDescription）
+    override val llmDescription = "China Railway (12306) seat availability. Returns trains, times, duration and seats left per class."
+    override val parameters = JSONObject().apply {
+        put("type", "object")
+        put("properties", JSONObject().apply {
+            put("from", JSONObject().apply { put("type", "string"); put("description", "departure station or city") })
+            put("to", JSONObject().apply { put("type", "string"); put("description", "arrival station or city") })
+            put("date", JSONObject().apply { put("type", "string"); put("description", "YYYY-MM-DD, default today") })
+        })
+        put("required", JSONArray(listOf("from", "to")))
+    }
+
+    override suspend fun execute(params: JSONObject): ToolResult = withContext(Dispatchers.IO) {
+        val from = params.optString("from", "").trim()
+        val to = params.optString("to", "").trim()
+        if (from.isBlank() || to.isBlank()) return@withContext ToolResult("请提供 from 和 to", isError = true)
+        val date = params.optString("date", "").trim().ifBlank {
+            java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.CHINA).format(java.util.Date())
+        }
+        val map = stationMap() ?: return@withContext ToolResult("拿不到 12306 车站数据（网络或接口变动）", isError = true)
+        val fc = resolveCode(map, from) ?: return@withContext ToolResult("识别不了出发站：$from", isError = true)
+        val tc = resolveCode(map, to) ?: return@withContext ToolResult("识别不了到达站：$to", isError = true)
+        try {
+            val cookie = cookiesFrom("https://kyfw.12306.cn/otn/leftTicket/init")   // 先拿会话 cookie，否则查询接口只回 HTML
+            val url = "https://kyfw.12306.cn/otn/leftTicket/query?leftTicketDTO.train_date=$date&leftTicketDTO.from_station=${fc.second}&leftTicketDTO.to_station=${tc.second}&purpose_codes=ADULT"
+            val body = get(url, "https://kyfw.12306.cn/otn/leftTicket/init", cookie) ?: return@withContext ToolResult("12306 查询失败（可能需稍后重试）", isError = true)
+            val results = JSONObject(body).optJSONObject("data")?.optJSONArray("result")
+                ?: return@withContext ToolResult("12306 返回异常（接口可能已变动）", isError = true)
+            if (results.length() == 0) return@withContext ToolResult("${fc.first}→${tc.first} $date 没有查到车次")
+            val seats = listOf(32 to "商务", 25 to "特等", 31 to "一等", 30 to "二等", 23 to "软卧", 28 to "硬卧", 29 to "硬座", 26 to "无座")
+            val sb = StringBuilder("🚄 ${fc.first} → ${tc.first}  $date\n\n")
+            var shown = 0
+            for (i in 0 until results.length()) {
+                if (shown >= 18) break
+                val f = results.optString(i).split("|")
+                if (f.size < 33) continue
+                val code = f[3]; val dep = f[8]; val arr = f[9]; val dur = f[10]
+                val avail = seats.mapNotNull { (idx, label) ->
+                    val v = f.getOrNull(idx)?.trim() ?: ""
+                    if (v.isNotBlank() && v != "无" && v != "--" && v != "*") "$label:$v" else null
+                }
+                sb.append("$code  $dep→$arr  $dur")
+                sb.append(if (avail.isEmpty()) "  (无票)\n" else "  ${avail.joinToString(" ")}\n")
+                shown++
+            }
+            ToolResult(sb.toString().trim())
+        } catch (e: Exception) { ToolResult("查票失败: ${e.message}", isError = true) }
+    }
+
+    // 站名 → (中文名, 电报码)。城市名可能对应多个站，取首个匹配；缓存 station 列表。
+    private fun resolveCode(map: List<Triple<String, String, String>>, q: String): Pair<String, String>? {
+        map.firstOrNull { it.first == q }?.let { return it.first to it.third }                 // 精确站名
+        map.firstOrNull { it.first.startsWith(q) }?.let { return it.first to it.third }         // 城市→该市首站(如「北京」→北京)
+        map.firstOrNull { it.second.equals(q, true) }?.let { return it.first to it.third }       // 拼音
+        return null
+    }
+
+    companion object {
+        @Volatile private var cache: List<Triple<String, String, String>>? = null   // 中文名, 拼音, 电报码
+        private fun get(url: String, referer: String? = null, cookie: String? = null): String? = try {
+            val c = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                requestMethod = "GET"; connectTimeout = 12000; readTimeout = 15000
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36")
+                referer?.let { setRequestProperty("Referer", it) }
+                cookie?.let { setRequestProperty("Cookie", it) }
+            }
+            if (c.responseCode in 200..299) c.inputStream.bufferedReader().use { it.readText() } else { c.errorStream?.close(); null }
+        } catch (_: Exception) { null }
+
+        // 拿页面的 Set-Cookie（12306 查询接口需要会话 cookie）
+        private fun cookiesFrom(url: String): String? = try {
+            val c = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                requestMethod = "GET"; instanceFollowRedirects = true; connectTimeout = 12000; readTimeout = 15000
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36")
+            }
+            c.responseCode
+            val cs = c.headerFields["Set-Cookie"]?.mapNotNull { it.substringBefore(";").takeIf { s -> s.contains("=") } }
+            runCatching { c.inputStream.close() }; c.disconnect()
+            cs?.joinToString("; ")?.takeIf { it.isNotBlank() }
+        } catch (_: Exception) { null }
+
+        private fun stationMap(): List<Triple<String, String, String>>? {
+            cache?.let { return it }
+            val js = get("https://kyfw.12306.cn/otn/resources/js/framework/station_name.js", "https://kyfw.12306.cn/") ?: return null
+            val raw = js.substringAfter("'", "").substringBeforeLast("'")
+            val out = ArrayList<Triple<String, String, String>>()
+            raw.split("@").forEach { seg ->
+                val p = seg.split("|")
+                if (p.size >= 4 && p[1].isNotBlank() && p[2].isNotBlank()) out.add(Triple(p[1], p[3], p[2]))  // 名, 拼音, 电报码
+            }
+            return out.takeIf { it.isNotEmpty() }?.also { cache = it }
+        }
+    }
+}
+
+// ============================================================
+// 管理对话 —— 一个工具多用(list/read/rename/delete/archive/pin)。删/归档等敏感操作靠权限等级触发确认。
+// ============================================================
+class ManageChatsTool(private val context: Context) : Tool {
+    override val name = "manage_chats"
+    override val description = "管理对话历史：action=search 跨所有对话搜聊天记录（找「以前聊过什么」用这个，返回对话 id/标题/时间/命中片段，再用 read 看全文）；list 列最近对话；read 读某对话内容；rename 改名；delete 删除；archive 归档；pin 置顶。用 id 或 match(标题)定位对话。"
+    override val permissionLevel = AndroidPermissionLevel.ACCESSIBILITY
+    override val parameters = JSONObject().apply {
+        put("type", "object")
+        put("properties", JSONObject().apply {
+            put("action", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("search", "list", "read", "rename", "delete", "archive", "pin"))); put("description", "操作") })
+            put("id", JSONObject().apply { put("type", "integer"); put("description", "对话 id（精确定位）") })
+            put("match", JSONObject().apply { put("type", "string"); put("description", "按标题定位对话（id 未给时用，支持模糊）") })
+            put("query", JSONObject().apply { put("type", "string"); put("description", "search 时要搜的内容（支持错字/词序颠倒的模糊匹配）") })
+            put("limit", JSONObject().apply { put("type", "integer"); put("description", "search 时最多返回几个对话，默认 6，上限 15") })
+            put("include_archived", JSONObject().apply { put("type", "boolean"); put("description", "search 是否含已归档对话，默认 true") })
+            put("title", JSONObject().apply { put("type", "string"); put("description", "rename 时的新标题") })
+            put("value", JSONObject().apply { put("type", "boolean"); put("description", "archive/pin 时：true=开, false=关；默认 true") })
+        })
+        put("required", JSONArray(listOf("action")))
+    }
+    override suspend fun execute(params: JSONObject): ToolResult = withContext(Dispatchers.IO) {
+        val db = com.arix.data.db.AppDatabase.getInstance(context)
+        val dao = db.conversationDao()
+        val cm = com.arix.app.ConversationManager(context)
+        // 标题匹配只需轻量投影（不拉 messagesJson，防大对话破 2MB 游标窗口）；命中后按 id 分列拼装完整实体。
+        suspend fun resolve(): com.arix.data.entity.ConversationEntity? {
+            val id = params.opt("id")?.toString()?.toLongOrNull()
+            if (id != null) return dao.getByIdAssembled(id)
+            val m = params.optString("match", "").trim()
+            if (m.isBlank()) return null
+            val list = dao.getActiveSummaries().first() + dao.getArchivedSummaries().first()
+            // 精确子串优先；记错标题时才退到模糊，避免模糊结果抢走本该命中的那个
+            val hit = list.firstOrNull { it.title.contains(m, true) }
+                ?: FuzzyMatch.rank(m, list, 1) { it.title }.firstOrNull()?.item
+            return hit?.let { dao.getByIdAssembled(it.id) }
+        }
+        try {
+            when (params.optString("action", "list")) {
+                "search" -> searchChats(dao, params)
+                "list" -> {
+                    val list = dao.getActiveSummaries().first().take(20)
+                    if (list.isEmpty()) return@withContext ToolResult("没有对话")
+                    // 条数按 id 单列取 messagesJson（不整表拉大列破窗）。map 是 inline，可在其 lambda 内调挂起函数；
+                    // joinToString 的 transform 不可内联挂起，故先 map 出行、再拼接。
+                    val lines = list.map { c ->
+                        val n = runCatching { org.json.JSONArray(dao.readMessagesJson(c.id)).length() }.getOrDefault(0)
+                        "#${c.id} ${c.title}  ($n 条)${if (c.isPinned) " 📌" else ""}"
+                    }
+                    ToolResult(lines.joinToString("\n"))
+                }
+                "read" -> {
+                    val c = resolve() ?: return@withContext ToolResult("没找到对话", isError = true)
+                    val msgs = cm.loadMessages(c.id).takeLast(30)
+                    ToolResult("【${c.title}】\n" + msgs.joinToString("\n") { "${it.role}: ${it.content.take(300)}" })
+                }
+                "rename" -> {
+                    val c = resolve() ?: return@withContext ToolResult("没找到对话", isError = true)
+                    val t = params.optString("title", "").trim()
+                    if (t.isBlank()) return@withContext ToolResult("请提供新标题 title", isError = true)
+                    dao.setTitle(c.id, t.take(40)); ToolResult("已改名：${c.title} → $t")
+                }
+                "delete" -> {
+                    val c = resolve() ?: return@withContext ToolResult("没找到对话", isError = true)
+                    // 走 ConversationManager.delete 而不是 dao.delete：后者只删库行，被压缩掉的原文
+                    // 还留在工作区 archive/ 里，模型转头就能把"已删除"的对话读回来
+                    // delete 现在会返回「到底删没删」——会话被用户锁定时它不删。
+                    // 必须看这个返回值：照旧无条件回「已删除」等于对模型撒谎，它会拿这句去回复用户，
+                    // 而那条会话还在。回话里说清是锁定挡的，模型才知道下一步该请用户解锁而不是重试。
+                    if (cm.delete(c.id)) ToolResult("已删除对话：${c.title}")
+                    else ToolResult("没删：对话「${c.title}」被用户锁定了。要删得先请用户在会话列表里解锁。", isError = true)
+                }
+                "archive" -> {
+                    val c = resolve() ?: return@withContext ToolResult("没找到对话", isError = true)
+                    val v = params.optBoolean("value", true); dao.setArchived(c.id, v); ToolResult(if (v) "已归档：${c.title}" else "已取消归档：${c.title}")
+                }
+                "pin" -> {
+                    val c = resolve() ?: return@withContext ToolResult("没找到对话", isError = true)
+                    val v = params.optBoolean("value", true); dao.setPinned(c.id, v); ToolResult(if (v) "已置顶：${c.title}" else "已取消置顶：${c.title}")
+                }
+                else -> ToolResult("未知 action", isError = true)
+            }
+        // 取消必须重抛：Kotlin 的 CancellationException 继承自 Exception，被这里吞掉的话
+        // 用户按了停止、跨对话搜索仍会把所有会话扫完（见项目「STOP 停不掉」的既有教训）
+        } catch (c: kotlinx.coroutines.CancellationException) { throw c }
+        catch (e: Exception) { ToolResult("操作失败: ${e.message}", isError = true) }
+    }
+
+    companion object {
+        /**
+         * 「一条都没搜到」的返回前缀。抽成常量是因为 [LocalSearchTool] 要靠它把「没搜到」
+         * 从正常结果里筛掉——两边各写一份字面量的话，哪天这句文案被改写或被 tr() 包了，
+         * 那边的判断就会**静默失效**（"没搜到"会被当成有结果塞给模型），而且编译器一声不吭。
+         * 常量共享至少让改动只发生在一处，改了两边一起变。
+         */
+        const val NO_CHAT_HITS = "所有对话里都没搜到"
+
+        /** 一次从索引里取多少条消息命中。取够多再在内存里按相关度重排/聚合到会话，够用且封顶。 */
+        private const val INDEX_FETCH = 300
+
+        /**
+         * 索引命中的最低分。FTS 命中就是命中，但 FuzzyMatch 的切词口径和 bigram 不完全一样
+         * （比如跨标点的命中），偶尔会给 0 分——那会让已经查到的结果被自己丢掉。
+         * 所以只拿 FuzzyMatch 做**排序**，命中与否以索引为准，用这个下限兜住。
+         */
+        private const val INDEX_HIT_FLOOR = 0.35f
+    }
+
+    private class ChatHit(val role: String, val snippet: String, val score: Float)
+    private class ChatMatch(
+        val convId: Long,
+        val title: String,
+        val updatedAt: Long,
+        val isArchived: Boolean,
+        val score: Float,
+        val hits: List<ChatHit>,
+        val titleHit: Boolean
+    )
+
+    /**
+     * 跨对话搜聊天记录。
+     *
+     * 两条路：优先查 FTS 全文索引（[ChatSearchIndex]，单条消息级 + 中文 bigram），
+     * 索引答不了或一条没中时，回退到原来的「全量拉取 + 逐条模糊打分」。
+     * 回退必须保留：索引是精确/近似子串级的，[FuzzyMatch] 能容错字、漏字、词序颠倒，
+     * 那是工具描述里对用户承诺过的能力，不能因为加了索引就悄悄没了。
+     *
+     * 结果严格控量（会话数上限 + 每会话片段上限 + 片段截断），把「还有多少」讲清楚让 AI 自己决定要不要 read。
+     */
+    private suspend fun searchChats(dao: com.arix.data.dao.ConversationDao, params: JSONObject): ToolResult {
+        val q = params.optString("query", "").ifBlank { params.optString("match", "") }.trim()
+        if (q.isBlank()) return ToolResult("请提供 query（要搜的内容）", isError = true)
+        val limit = params.optInt("limit", 6).coerceIn(1, 15)
+        val includeArchived = params.optBoolean("include_archived", true)
+
+        // null = 索引还没建好/这条查询索引答不了（如只输了一个汉字）；空 = 索引齐全但确实没命中。
+        // 两种都往下走全扫兜底。
+        val indexed = com.arix.data.search.ChatSearchIndex.search(q, includeArchived, INDEX_FETCH)
+        val matches =
+            if (!indexed.isNullOrEmpty()) matchesFromIndex(dao, q, indexed, includeArchived)
+            else matchesByFullScan(dao, q, includeArchived)
+
+        if (matches.isEmpty()) return ToolResult(NO_CHAT_HITS + "「$q」")
+
+        val sorted = matches.sortedWith(compareByDescending<ChatMatch> { it.score }.thenByDescending { it.updatedAt })
+        val show = sorted.take(limit)
+        val totalHits = sorted.sumOf { it.hits.size }
+        val sb = StringBuilder("搜「$q」：${sorted.size} 个对话命中，共 $totalHits 条消息")
+        if (sorted.size > limit) sb.append("（只列前 $limit 个）")
+        sb.append("\n")
+        for (m in show) {
+            sb.append("\n#${m.convId} 【${m.title}】 ${relTime(m.updatedAt)}")
+            if (m.isArchived) sb.append(" [已归档]")
+            if (m.titleHit) sb.append(" [标题命中]")
+            sb.append("  ${m.hits.size} 条\n")
+            m.hits.take(3).forEach { h ->
+                sb.append("  ${if (h.role == "user") "我" else "AI"}: ${h.snippet}\n")
+            }
+            if (m.hits.size > 3) sb.append("  …该对话还有 ${m.hits.size - 3} 条命中，用 action=read id=${m.convId} 看全文\n")
+        }
+        return ToolResult(sb.toString().trim())
+    }
+
+    /**
+     * 索引路径：把消息级命中聚合回会话。
+     * 索引里只有消息正文，**标题命中要另外补**——所以这里仍会拉一次会话列表，但走的是轻量投影
+     * （只有元数据，不含 messagesJson），代价与"全量解析每条消息"完全不是一个量级。
+     */
+    private suspend fun matchesFromIndex(
+        dao: com.arix.data.dao.ConversationDao,
+        q: String,
+        hits: List<com.arix.data.search.ChatIndexHit>,
+        includeArchived: Boolean
+    ): List<ChatMatch> {
+        val byConv = LinkedHashMap<Long, ArrayList<ChatHit>>()
+        val meta = HashMap<Long, com.arix.data.search.ChatIndexHit>()
+        for (h in hits) {
+            val s = maxOf(FuzzyMatch.score(q, h.raw), INDEX_HIT_FLOOR)
+            byConv.getOrPut(h.convId) { ArrayList() }.add(ChatHit(h.role, snippetAround(h.raw, q), s))
+            if (!meta.containsKey(h.convId)) meta[h.convId] = h
+        }
+
+        val summaries = dao.getActiveSummaries().first() +
+            (if (includeArchived) dao.getArchivedSummaries().first() else emptyList())
+        val byId = summaries.associateBy { it.id }
+        val titleScores = HashMap<Long, Float>()
+        for (s in summaries) {
+            val ts = FuzzyMatch.score(q, s.title)
+            if (ts > 0f) titleScores[s.id] = ts
+        }
+
+        val out = ArrayList<ChatMatch>()
+        for (id in byConv.keys + titleScores.keys) {
+            val hs = (byConv[id] ?: emptyList<ChatHit>()).sortedByDescending { it.score }
+            val tScore = titleScores[id] ?: 0f
+            val best = maxOf(tScore, hs.maxOfOrNull { it.score } ?: 0f)
+            if (best <= 0f) continue
+            // 元数据优先用轻量投影（最新）；投影里没有（会话刚被删但索引还没清完）就用索引里那份快照
+            val s = byId[id]
+            val m = meta[id]
+            val title = s?.title ?: m?.title ?: continue
+            val updatedAt = s?.updatedAt ?: m?.updatedAt ?: 0L
+            val archived = s?.isArchived ?: m?.isArchived ?: false
+            if (!includeArchived && archived) continue
+            out.add(ChatMatch(id, title, updatedAt, archived, best, hs, tScore > 0f))
+        }
+        return out
+    }
+
+    /**
+     * 回退路径：原来的全量扫描。逐条分列拼装完整实体（避免整表 SELECT * 因某条超大对话破 2MB 窗口），
+     * 再逐条 JSON 解析 + 模糊打分。慢，但**能力最全**（容错字/漏字/词序），且不依赖索引状态。
+     */
+    private suspend fun matchesByFullScan(
+        dao: com.arix.data.dao.ConversationDao,
+        q: String,
+        includeArchived: Boolean
+    ): List<ChatMatch> {
+        val convs = if (includeArchived) dao.getAllActiveFull() + dao.getAllArchivedFull()
+        else dao.getAllActiveFull()
+
+        val matches = ArrayList<ChatMatch>()
+        for (c in convs) {
+            // 这条路可能要扫几百个会话，用户按停止就得立刻停（项目「STOP 停不掉」的老教训）
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            val hits = ArrayList<ChatHit>()
+            runCatching {
+                val arr = JSONArray(c.messagesJson)
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val role = o.optString("role", "")
+                    // 工具回显/系统提示不算「聊天记录」，命中只会是噪音
+                    if (role == "tool" || role == "system") continue
+                    // 偶有整篇文档被粘进消息，截断打分把最坏情况的扫描量兜住（手表上全量归一化太贵）
+                    val content = o.optString("content", "").take(4000)
+                    if (content.isBlank()) continue
+                    val s = FuzzyMatch.score(q, content)
+                    if (s > 0f) hits.add(ChatHit(role, snippetAround(content, q), s))
+                }
+            }
+            val titleScore = FuzzyMatch.score(q, c.title)
+            val best = maxOf(titleScore, hits.maxOfOrNull { it.score } ?: 0f)
+            if (best > 0f) matches.add(
+                ChatMatch(c.id, c.title, c.updatedAt, c.isArchived, best, hits.sortedByDescending { it.score }, titleScore > 0f)
+            )
+        }
+        return matches
+    }
+
+    /** 片段取命中词周边而非开头，否则长消息里命中的那句根本露不出来。 */
+    private fun snippetAround(content: String, query: String, radius: Int = 50): String {
+        val flat = content.replace(Regex("\\s+"), " ")
+        val lc = flat.lowercase()
+        val idx = FuzzyMatch.tokens(query).map { lc.indexOf(it) }.filter { it >= 0 }.minOrNull() ?: 0
+        val start = (idx - radius).coerceAtLeast(0)
+        val end = (idx + radius * 2).coerceAtMost(flat.length)
+        return (if (start > 0) "…" else "") + flat.substring(start, end) + (if (end < flat.length) "…" else "")
+    }
+
+    private fun relTime(ts: Long): String {
+        val d = (System.currentTimeMillis() - ts) / 1000
+        return when {
+            d < 3600 -> "${(d / 60).coerceAtLeast(1)} 分钟前"
+            d < 86400 -> "${d / 3600} 小时前"
+            d < 86400 * 30 -> "${d / 86400} 天前"
+            else -> java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date(ts))
+        }
+    }
+}

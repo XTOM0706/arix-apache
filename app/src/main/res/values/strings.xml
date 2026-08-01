@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Arix</string>
+    <string name="ui_accessibility_desc">开启后，Arix 能读取当前屏幕内容并代你点按/滑动，用于「界面自动化」（让 AI 帮你操作其它 App）。仅在你主动让它操作界面时使用。</string>
+</resources>

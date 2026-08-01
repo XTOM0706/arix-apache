@@ -1,0 +1,412 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- 现场健康测量：直接读本机身体传感器(心率等)。危险权限，运行时授予。本机无传感器时回落到手表(better health tracker)。 -->
+    <uses-permission android:name="android.permission.BODY_SENSORS" />
+    <!-- 绑定独立「Arix 终端」App 的服务（签名级权限，两 App 同签名才放行） -->
+    <uses-permission android:name="com.arix.terminal.permission.BIND_TERMINAL" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- targetSdk 28=旧式(非分区)存储：不再 cap maxSdkVersion，让新机上也能拿 legacy 全盘读写（AI 文件工具/Gadgetbridge/共享工作区都靠它） -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <!-- Android 13+ 分区存储：媒体读取 -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <!-- Android 11+ 所有文件访问：AI 文件工具需要在私有目录外读写时用 -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+    <!-- 电池优化豁免：手表后台唤醒词监听不被系统杀 -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- wifi_info 工具：读当前 WiFi 连接信息（isWifiEnabled/connectionInfo 需此权限，否则抛 SecurityException） -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- 直接拨出：make_phone_call 在「AI 直接执行操作」开时走 ACTION_CALL 真拨号。
+         没这个权限只能走 ACTION_DIAL——那只是把号码填进拨号盘，还得用户自己按拨号键。 -->
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <!-- 日历：AI 直接读日程 / 建日程（直接执行开时；关时仍走跳系统日历） -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+    <!-- 系统闹钟：set_alarm 工具。系统时钟的 ACTION_SET_ALARM 入口受此权限保护，
+         尤其 EXTRA_SKIP_UI=true（不弹界面直接建）必须有它，否则 startActivity 直接抛 SecurityException。
+         normal 级权限，装了即授予、不弹窗。 -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <!-- 手机使用情况：查各 App 使用时长/屏幕时间。特殊权限，用户在系统「使用情况访问」页授予。 -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
+    <!-- 健康数据：读「better health tracker」App 暴露的健康数据(步数/心率/血氧/睡眠)。
+         它已处理各国产手表传感器差异，比裸读传感器可靠得多。默认关，设置里开→运行时授权。
+         v2(推荐)=dangerous 运行时授权；v1=normal 装了自动授予(但需在 tracker 里开 ContentProvider 开关)。 -->
+    <uses-permission android:name="com.ailife.betterhealth.permission.READ_DATA" />
+    <uses-permission android:name="com.ailife.betterhealth.READ_HEALTH_DATA" />
+    <!-- Health Connect（健康连接）：统一读小米/vivo/Keep/Google Fit 等写入的步数/心率/睡眠。运行时授权。 -->
+    <uses-permission android:name="android.permission.health.READ_STEPS" />
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_SLEEP" />
+    <uses-permission android:name="android.permission.health.READ_OXYGEN_SATURATION" />
+    <uses-permission android:name="android.permission.WRITE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 实时胶囊（阶段 A）：ColorOS 16 / Android 16 流体云走 Google Live Updates 的「提升常驻通知」，
+         需此权限（配合 POST_NOTIFICATIONS）。低版本/其它 ROM 无副作用。 -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <!-- 蓝牙 BLE 扫描（ble_scan 工具，默认关，运行时授权） -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" tools:targetApi="s" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <!-- Shizuku：ADB 级授权入口 -->
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
+    <!-- ADB 保活：开机自恢复 Shizuku。RECEIVE_BOOT_COMPLETED 收开机广播踢起自恢复流程。 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- ADB 保活：自己开无线调试(adb_wifi_enabled=1)需写安全设置。签名级签下拿不到，
+         但用户用 adb 引导 `pm grant com.arix.app android.permission.WRITE_SECURE_SETTINGS` 后能长期持有；
+         声明了才谈得上持有(没有它 AdbKeepAlive.tryEnableWirelessDebug 会跳过并提示)。 -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
+    <!-- 强停别的 App（app_launch action=stop）。normal 级、装了即授予、不弹窗。
+         没有它时只能把用户送到「应用信息」页自己点强行停止——那不叫 AI 帮你做了。
+         注意它只结束后台进程，不是真正的 force-stop（那要 Shizuku/root，代码里两条路都试）。 -->
+    <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
+    <!-- Termux：把命令交给真 Linux 环境执行（需用户装 Termux 并开 allow-external-apps） -->
+    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
+    <!-- 终端页一键安装内置的「Arix 终端」APK（仍由系统安装器确认，非静默安装） -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- 特权热词源：仅当本 App 作为系统/特权应用(内嵌进 OnyxUI)时由 privapp 允许清单授予，
+         普通侧载装不到、也不会用(运行时按 FLAG_SYSTEM 门控，见 WakeAudioPipeline)。 -->
+    <uses-permission android:name="android.permission.CAPTURE_AUDIO_HOTWORD"
+        tools:ignore="ProtectedPermissions" />
+
+    <!-- allowBackup=false：本 App 的数据目录里装着**第三方 API 密钥、全部对话记录、记忆库**。
+         开着的话，Android 11 及以下（手表上很常见）一条 `adb backup` 就能把整份数据拖走，
+         不需要 root、不需要解锁、屏幕上只有一个含糊的系统确认框。Android 12+ 已默认不再包含
+         App 数据，但我们的 minSdk 是 26，挡不住老设备。
+         关掉不损失任何能力：App 自带完整备份（整包 zip / GitHub / WebDAV / S3），
+         那条路是用户明确发起、且能自己选加不加密的。
+         要恢复系统备份的话改回 true 即可（一行）。 -->
+    <application
+        android:name=".XtomApp"
+        android:allowBackup="false"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:requestLegacyExternalStorage="true"
+        android:usesCleartextTraffic="true"
+        android:largeHeap="true"
+        android:theme="@style/Theme.AppCompat.DayNight">
+
+        <!-- Xposed 模块标记（解锁 HyperOS 超级岛焦点通知自定义；见 com.arix.app.xposed.FocusUnlockHook）。
+             暂停(2026-07-23)：连同 :xposed-api-stub / app 依赖 / FocusUnlockHook 一并停用；恢复时一起放开。
+        <meta-data android:name="xposedmodule" android:value="true" />
+        <meta-data android:name="xposedminversion" android:value="82" />
+        <meta-data android:name="xposeddescription"
+            android:value="解锁 HyperOS 超级岛焦点通知自定义（配色/流光/图标），让 Arix 实时岛真正生效" />
+        <meta-data android:name="xposedscope" android:resource="@array/xposed_scope" />
+        -->
+        <!-- (xposed meta 已停用) -->
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|keyboard|navigation|uiMode|density">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VOICE_ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <!-- Health Connect 权限用途说明入口（旧版 HC app 走此 action；Android 14+ 走下方 VIEW_PERMISSION_USAGE） -->
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+            <!-- 系统分享面板：任意 App 里「分享 → Arix」。文字/链接走 EXTRA_TEXT(+EXTRA_SUBJECT)，图片走 EXTRA_STREAM。
+                 挂在 MainActivity 上而不是另开代理：分享是普通 startActivity，singleTask 复用现有实例正是我们要的，
+                 冷启动由 onCreate 接、App 已在跑由 onNewIntent 接（两处都调 ShareIntake.handle）。
+                 只登记 text/plain 与 image/*：分享面板里出现的条目越准，用户越不会在一堆不相干的 App 里找 Arix。
+                 要连任意文件一起收，把 mimeType 加成 */* 即可（下游 resolveAttachments 本来就认文本/文档）。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+        </activity>
+
+        <!-- Android 14+ 原生健康连接：权限用途说明入口 -->
+        <activity-alias
+            android:name="ViewPermissionUsageActivity"
+            android:exported="true"
+            android:targetActivity=".MainActivity"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity
+            android:name=".WakeAssistantActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:excludeFromRecents="true"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <activity
+            android:name=".AttachmentPickerActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <activity
+            android:name=".ScreenProjectionActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- 划词处理：任意 App 里长按选中文字 → 系统文本菜单出现「Arix」。
+             必须是**独立的透明代理**、不能挂到 MainActivity 上：文本菜单用 startActivityForResult 拉起处理方，
+             期望它落在调用方的任务栈里，而 MainActivity 是 singleTask（永远回自己的栈）。
+             noHistory + excludeFromRecents：它只是一层瞬间起停的门，不该留在返回栈或最近任务里。
+             intent-filter 的 label 就是菜单项上的字，用 @string/app_name（"Arix"，够短，手表上也放得下）。 -->
+        <activity
+            android:name=".ProcessTextActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter android:label="@string/app_name">
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".ScreenCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
+        <!--
+            隐身取页服务。android:process 让它跑在**独立进程**里——这是真隐身的唯一做法：
+            CookieManager 是进程级单例，同进程内所有 WebView 共用一份 cookie 库，
+            已存在的第一方 cookie 照样会被发出去。独立进程 + WebView.setDataDirectorySuffix
+            才有自己的 cookie/缓存/DOM storage。见 IncognitoWeb（那里也写了 API<28 为什么用不了）。
+            exported=false：只给自家主进程绑，别让别的 App 拿它当代理去取页。
+        -->
+        <service
+            android:name=".IncognitoFetchService"
+            android:exported="false"
+            android:process=":incognito" />
+
+        <service
+            android:name=".WakeService"
+            android:exported="false"
+            android:foregroundServiceType="microphone|dataSync" />
+
+        <!-- 数字助手：设为默认助手后系统常驻，助手手势/唤醒命中拉起系统托管会话浮层 -->
+        <service
+            android:name=".XtomVoiceInteractionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_VOICE_INTERACTION">
+            <intent-filter>
+                <action android:name="android.service.voice.VoiceInteractionService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.voice_interaction"
+                android:resource="@xml/interaction_service" />
+        </service>
+
+        <service
+            android:name=".XtomVoiceSessionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_VOICE_INTERACTION" />
+
+        <!-- ⚠ BIND_RECOGNITION_SERVICE 不能省：这个服务是 exported 的，没有它**设备上任何一个 App
+             都能直接 bindService 进来**驱动我们的语音识别管线（等于借我们的麦克风与 STT 用）。
+             系统语音识别框架本身就是按这个签名级权限来绑的，加上它只挡住"越过系统直接绑"的第三方。
+             对照：本清单里另外三个 exported 服务(VoiceInteraction/VoiceSession/AccessibilityService/
+             NotificationListener)都各自带了对应的 BIND_* 权限，只有这个漏了。 -->
+        <service
+            android:name=".XtomRecognitionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_RECOGNITION_SERVICE">
+            <intent-filter>
+                <action android:name="android.speech.RecognitionService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.speech"
+                android:resource="@xml/recognition_service" />
+        </service>
+
+        <!-- 界面自动化无障碍服务（用户在系统设置里手动开启后才生效） -->
+        <service
+            android:name=".XtomAccessibilityService"
+            android:exported="false"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/xtom_accessibility_config" />
+        </service>
+
+        <!-- Shizuku 授权入口 provider -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
+        <!-- 通知感知：捕获系统其它 App 的通知供 AI 了解（需用户在系统里授予「通知使用权」） -->
+        <service
+            android:name=".XtomNotificationListener"
+            android:exported="true"
+            android:label="Arix 通知感知"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- ADB 保活：开机自恢复 Shizuku。directBootAware=true 才能在解锁前收 LOCKED_BOOT_COMPLETED（尽早自恢复）。 -->
+        <receiver
+            android:name=".AdbBootReceiver"
+            android:exported="true"
+            android:directBootAware="true">
+            <intent-filter>
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 桌面小组件：Arix 快速入口（点击开始新对话） -->
+        <receiver
+            android:name=".XtomWidget"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/xtom_widget_info" />
+        </receiver>
+
+        <!-- 快捷设置磁贴（下拉通知栏一格）：语音 / 新对话。
+             TileService 需 API 24+，本项目 minSdk 26，无需版本门控。
+             ⚠ BIND_QUICK_SETTINGS_TILE 不能省：这两个服务是 exported 的，没有它任何 App 都能直接 bind 进来
+             （对照本清单里其它 exported 服务，各自都带了对应的 BIND_*）。
+             android:label 是「编辑磁贴」托盘里的名字，必须写死在清单里（那时服务还没起来）；磁贴真正放上去后
+             显示的名字由 onStartListening 里的 tr() 覆盖，跟随 App 内语言设置。
+             图标直接复用现成的 Material vector（ic_capsule_*），系统会按亮/暗与激活态自己染色。 -->
+        <service
+            android:name=".XtomVoiceTileService"
+            android:exported="true"
+            android:label="Arix 语音"
+            android:icon="@drawable/ic_capsule_listening"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".XtomNewChatTileService"
+            android:exported="true"
+            android:label="Arix 新对话"
+            android:icon="@drawable/ic_capsule_message"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- 实时胶囊（超级岛/流体云）动作按钮：停止生成 / 岛内直接回复。仅本应用 PendingIntent 可触发。 -->
+        <receiver
+            android:name=".CapsuleActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.arix.capsule.STOP" />
+                <action android:name="com.arix.capsule.REPLY" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 常驻悬浮球 /「总是接管媒体键」的保活壳。自己不做任何计算，只是把进程护住：
+             悬浮球是 WindowManager 里的一个 View、媒体会话是进程内的一个 MediaSession，
+             进程被国产 ROM 冻杀两者就都没了，「常驻」根本常驻不了。
+             foregroundServiceType=dataSync：对应的 FOREGROUND_SERVICE_DATA_SYNC 权限本清单上方已声明，
+             这次没有新增任何权限。**不用 microphone**——我们不持麦（那是 WakeService 的事），
+             而且 Android 14+ 的 microphone 前台类型只能在前台启动，被杀后重启会直接起不来。 -->
+        <service
+            android:name=".XtomOverlayService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- 开机把悬浮球放回去（用户在设置里开了「开机后自动放回来」才会真的放）。
+             单开一个接收器而不是并进 AdbBootReceiver：那个是 directBootAware、在**解锁前**就跑，
+             而我们要读的 SharedPreferences 和要加的悬浮窗在解锁前都拿不到。只收 BOOT_COMPLETED。
+             exported=true 是收系统开机广播的前提（系统以另一个 uid 发出）；接收器内部只认
+             ACTION_BOOT_COMPLETED，其余一律直接 return。 -->
+        <receiver
+            android:name=".XtomOverlayBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+
+    <!-- Android 11+ 包可见性：允许查询「better health tracker」的健康数据 ContentProvider -->
+    <queries>
+        <!-- 能否发现/绑定独立终端 App -->
+        <package android:name="com.arix.terminal" />
+        <package android:name="com.ailife.betterhealth" />
+        <!-- Health Connect app（Android <14 时健康连接是独立 App） -->
+        <package android:name="com.google.android.apps.healthdata" />
+        <!-- Termux：termux_exec 需能看到并调用它 -->
+        <package android:name="com.termux" />
+        <!-- 网易云音乐：play_song 唤起 App 播放 -->
+        <package android:name="com.netease.cloudmusic" />
+    </queries>
+
+</manifest>
