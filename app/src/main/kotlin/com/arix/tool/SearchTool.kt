@@ -23,7 +23,7 @@ import org.json.JSONObject
 class SearchTool(private val context: android.content.Context) : Tool {
     override val name = "web_search"
     // "别用 deep" 原来在这段描述里说了三遍（描述一遍、deep 参数一遍、depth 参数一遍）。说一遍就够。
-    override val description = "联网搜索获取实时信息（新闻、天气、事实、观点、社区讨论等）。默认快搜、秒回，绝大多数问题都用默认。只有用户明确要求彻底调研/多源交叉验证时才加 depth=deep（多轮、慢，产出带引用的综合报告）。type=image 找图、type=video 找视频。"
+    override val description = "联网搜索获取实时信息（新闻、天气、事实、观点、社区讨论等）。默认快搜、秒回，绝大多数问题都用默认。只有用户明确要求彻底调研/多源交叉验证时才加 depth=deep（多轮、慢，产出带引用的综合报告）。"
     // 模型侧英文（见 Tool.llmDescription）
     override val llmDescription = "Web search for current info: news, weather, facts, opinions, forum threads. Default is a fast search and answers almost everything. Only add depth=deep when the user explicitly asks for thorough research or cross-checking sources (multi-round, slow, produces a cited report). type=image finds pictures, type=video finds videos."
 
@@ -95,7 +95,7 @@ class SearchTool(private val context: android.content.Context) : Tool {
             })
             put("type", JSONObject().apply {
                 put("type", "string")
-                put("description", "web (default); image = returns direct image links, can be shown in chat; video = returns playable links (Bilibili/YouTube/Tencent Video)")
+                put("description", "web (default)")
             })
         })
         put("required", JSONArray(listOf("query")))
@@ -104,32 +104,6 @@ class SearchTool(private val context: android.content.Context) : Tool {
     override suspend fun execute(params: JSONObject): ToolResult = withContext(Dispatchers.IO) {
         val mediaType = params.optString("type", "web")
         val rawQuery = params.optString("query", "").trim()
-        // 图片搜索：直连拿图片直链（Bing/百度图片），不走网页/深度流程
-        if (mediaType == "image") {
-            if (rawQuery.isBlank()) return@withContext ToolResult("请输入搜索词", isError = true)
-            val imgs = com.arix.tool.search.ImageSearch.search(rawQuery, params.optInt("num_results", 8).coerceIn(1, 20))
-            return@withContext if (imgs.isEmpty()) ToolResult("未搜到图片，换个关键词试试", isError = true)
-                else ToolResult(com.arix.tool.search.ImageSearch.format(imgs))
-        }
-        // 视频搜索：定向主流视频站，返回可播放的视频页链接
-        if (mediaType == "video") {
-            if (rawQuery.isBlank()) return@withContext ToolResult("请输入搜索词", isError = true)
-            val vq = "$rawQuery (site:bilibili.com OR site:youtube.com OR site:v.qq.com OR site:douyin.com)"
-            val vids = BingEngine.search(vq, params.optInt("num_results", 8).coerceIn(1, 20), "zh")
-            if (vids.isEmpty()) return@withContext ToolResult("未搜到视频，换个关键词试试", isError = true)
-            // 搜到即解析：并发对每个视频拿元数据+封面（B站/YouTube 走轻 API；其它回退页面链接）
-            val enriched = coroutineScope {
-                vids.map { r -> async { r to com.arix.tool.search.VideoMeta.fetch(r.url) } }.awaitAll()
-            }
-            return@withContext ToolResult(buildString {
-                append("📺 视频搜索 · ${enriched.size} 条\n\n")
-                enriched.forEachIndexed { i, (r, meta) ->
-                    append("${i + 1}. ")
-                    if (meta != null) append(meta.trimEnd()) else append(r.title).append("\n   ").append(r.url)
-                    append("\n\n")
-                }
-            })
-        }
 
         // 默认快搜(quick)直连、秒回；只有显式 depth=deep(或 deep=true)才走多轮 XSEARCHING 深度研究。
         // 之前默认 auto 会动不动就多轮深搜——又慢又占用整个对话，改为深搜必须明确指定。

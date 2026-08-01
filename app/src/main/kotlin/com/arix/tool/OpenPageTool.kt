@@ -32,16 +32,15 @@ private const val IMAGES_JS = "(function(){var s=new Set();document.querySelecto
 class OpenPageTool(private val context: android.content.Context) : Tool {
 
     override val name = "open_page"
-    override val description = "取网页内容：默认(format=auto)用浏览器内核(WebView)打开、能跑 JS、真实浏览器 UA，最能拿到动态内容、最少被 403，返回清洗后的正文；已知返回 JSON/API 或要原始 HTML 时设 format=json / raw(直连、更快)。mode=images/video 取页面图片/视频直链。抓取网页正文/接口都用它。"
+    override val description = "取网页内容：默认(format=auto)用浏览器内核(WebView)打开、能跑 JS、真实浏览器 UA，最能拿到动态内容、最少被 403，返回清洗后的正文；已知返回 JSON/API 或要原始 HTML 时设 format=json / raw(直连、更快)。抓取网页正文/接口都用它。"
 
     // 模型侧英文（见 Tool.llmDescription）
-    override val llmDescription = "Fetch a web page. Default (format=auto) opens it in a real browser engine — runs JS, real UA, best at dynamic content and least likely to get 403 — and returns cleaned article text. Set format=json or raw (direct, faster) when you know it is an API or you need the HTML. mode=images/video returns direct media links. Use this for any page or endpoint."
+    override val llmDescription = "Fetch a web page. Default (format=auto) opens it in a real browser engine — runs JS, real UA, best at dynamic content and least likely to get 403 — and returns cleaned article text. Set format=json or raw (direct, faster) when you know it is an API or you need the HTML. Use this for any page or endpoint."
     override val parameters = JSONObject().apply {
         put("type", "object")
         put("properties", JSONObject().apply {
             put("url", JSONObject().apply { put("type", "string"); put("description", "page URL") })
             put("format", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("auto", "raw", "json"))); put("description", "auto=browser-rendered article text (default, avoids 403); raw=direct HTML; json=direct + parse JSON") })
-            put("mode", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("text", "images", "video"))); put("description", "text (default); images=all image links on the page; video=info/cover + playable link (Bilibili via official API; YouTube info + page link; others scrape <video>/.mp4/.m3u8)") })
         })
         put("required", JSONArray(listOf("url")))
     }
@@ -64,16 +63,6 @@ class OpenPageTool(private val context: android.content.Context) : Tool {
             formatXhs(renderWithWebView(urlStr, XHS_JS, withCookies = true))?.let { return ToolResult(UntrustedWeb.fence(it, "小红书笔记")) }
             // 仍取不到就继续走下面的通用流程
         }
-
-        // images 模式：WebView 渲染后抓所有图片直链（破 JS 懒加载）
-        if (params.optString("mode", "text") == "images") {
-            val imgs = renderWithWebView(urlStr, IMAGES_JS)
-            return if (imgs.isNullOrBlank()) ToolResult("未在页面取到图片(可能需登录或强反爬)", isError = true)
-                else ToolResult("🖼️ 页面图片直链：\n" + imgs.lines().filter { it.isNotBlank() }.mapIndexed { i, u -> "${i + 1}. $u" }.joinToString("\n"))
-        }
-
-        // video 模式：yt-dlp 提取视频直链/元数据/字幕
-        if (params.optString("mode", "text") == "video") return extractVideo(urlStr)
 
         // raw/json：直连取原始内容（API/结构化数据场景）
         when (params.optString("format", "auto")) {
@@ -210,25 +199,6 @@ class OpenPageTool(private val context: android.content.Context) : Tool {
             }
         } catch (_: Exception) { null }
     }
-
-    // 视频提取：走各站公开端点——VideoMeta 拿信息+封面(+B站 WBI playurl 直链)，
-    // 其它站兜底从页面 HTML 抓 <video>/<source>/.mp4/.m3u8 媒体直链。不再用 yt-dlp。
-    private suspend fun extractVideo(url: String): ToolResult = withContext(Dispatchers.IO) {
-        val meta = com.arix.tool.search.VideoMeta.fetch(url)
-        val generic = if (meta == null || !meta.contains("直链")) genericMediaLinks(url) else null
-        if (meta == null && generic == null) return@withContext ToolResult("视频提取失败（该站没有公开可解析的直链，可打开页面链接观看，或在 设置→站点登录 登录后重试）", isError = true)
-        ToolResult(buildString { meta?.let { append(it) }; generic?.let { append(it) } })
-    }
-
-    // 通用兜底：直连取页面 HTML，正则抓媒体直链（<video>/<source> src、.mp4/.m3u8/.webm）。
-    private fun genericMediaLinks(url: String): String? = try {
-        val html = directRaw(url) ?: ""
-        val links = LinkedHashSet<String>()
-        Regex("""<(?:video|source)[^>]+src=["']([^"']+)["']""", RegexOption.IGNORE_CASE).findAll(html).forEach { links.add(it.groupValues[1]) }
-        Regex("""https?://[^"'\s<>]+\.(?:mp4|m3u8|webm)(?:\?[^"'\s<>]*)?""", RegexOption.IGNORE_CASE).findAll(html).forEach { links.add(it.value) }
-        if (links.isEmpty()) null
-        else "媒体直链：\n" + links.take(5).mapIndexed { i, u -> "${i + 1}. ${if (u.startsWith("http")) u else java.net.URL(java.net.URL(url), u).toString()}" }.joinToString("\n") + "\n"
-    } catch (_: Exception) { null }
 
     // 直连取原始内容（不清洗），供 format=raw/json
     private fun directRaw(url: String): String? = try {

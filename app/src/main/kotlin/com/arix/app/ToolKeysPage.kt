@@ -25,13 +25,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
 import com.arix.app.ui.topChromeGapHeight
 
-// 工具密钥：地图/生活/Home Assistant 的 Key，及 App 内提醒管理
+// 工具密钥：Home Assistant 的 Key，及 App 内提醒管理
 @Composable fun ToolKeysPage(context: android.content.Context) {
     val scheme = MaterialTheme.colorScheme
-    var amapKey by remember { mutableStateOf(com.arix.tool.MapPrefs.amapKey(context)) }
-    var googleKey by remember { mutableStateOf(com.arix.tool.MapPrefs.googleKey(context)) }
-    var lifeId by remember { mutableStateOf(com.arix.tool.LifePrefs.appId(context)) }
-    var lifeSecret by remember { mutableStateOf(com.arix.tool.LifePrefs.appSecret(context)) }
     // HA：工具的描述与报错一直说「也可在设置里填」，但那个界面从来没实现过（HaPrefs 全仓零引用），
     // 于是唯一的配置路子是开口让 AI 调 action=config——等于逼用户把长效 token 念给模型听。补上。
     var haBase by remember { mutableStateOf(com.arix.tool.HaPrefs.baseUrl(context)) }
@@ -40,28 +36,6 @@ import com.arix.app.ui.topChromeGapHeight
 
     Column(modifier = Modifier.fillMaxSize().padding(12.dp).verticalScroll(rememberScrollState())) {
         Spacer(Modifier.topChromeGapHeight())   // 顶部悬浮玻璃让位：在滚动内容里，内容能从玻璃下滑过去化开
-        // 地图 API Key（可选）——填了 map 工具才有距离/时长/POI 数据
-        Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = scheme.surface), shape = MaterialTheme.shapes.extraLarge, elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)) {
-            Column(Modifier.padding(12.dp)) {
-                Text(tr("地图 API Key（可选）"), color = scheme.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                Text(tr("填了 map 工具「算距离/时长、搜 POI」才返回真实数据；不填也能「打开地图 App 导航」。高德=restapi Web 服务 key（国内免费申请），Google=Directions/Places key（海外）。"), color = scheme.onSurfaceVariant, fontSize = 10.sp, modifier = Modifier.padding(top = 2.dp, bottom = 6.dp))
-                com.arix.app.ui.XtomField(value = amapKey, onValueChange = { amapKey = it; com.arix.tool.MapPrefs.set(context, it, googleKey) }, label = tr("高德 Web 服务 Key"), modifier = Modifier.fillMaxWidth(), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp))
-                Spacer(Modifier.height(6.dp))
-                com.arix.app.ui.XtomField(value = googleKey, onValueChange = { googleKey = it; com.arix.tool.MapPrefs.set(context, amapKey, it) }, label = tr("Google Maps Key（海外，可留空）"), modifier = Modifier.fillMaxWidth(), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp))
-            }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        // 生活 API Key（mxnzp，可选）——一个 key 解锁 油价/垃圾分类/快递/解梦/手机归属
-        Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = scheme.surface), shape = MaterialTheme.shapes.extraLarge, elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)) {
-            Column(Modifier.padding(12.dp)) {
-                Text(tr("生活 API Key（mxnzp，可选）"), color = scheme.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                Text(tr("life_query 里节假日/汇率/一言/星座/IP 免 key 就能用；油价/垃圾分类/快递/解梦/手机归属 需在 mxnzp.com 免费注册一个 app_id+secret 填这里。"), color = scheme.onSurfaceVariant, fontSize = 10.sp, modifier = Modifier.padding(top = 2.dp, bottom = 6.dp))
-                com.arix.app.ui.XtomField(value = lifeId, onValueChange = { lifeId = it; com.arix.tool.LifePrefs.set(context, it, lifeSecret) }, label = "app_id", modifier = Modifier.fillMaxWidth(), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp))
-                Spacer(Modifier.height(6.dp))
-                com.arix.app.ui.XtomField(value = lifeSecret, onValueChange = { lifeSecret = it; com.arix.tool.LifePrefs.set(context, lifeId, it) }, label = "app_secret", modifier = Modifier.fillMaxWidth(), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp))
-            }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
         // Home Assistant：基址 + 长效访问令牌。token 是长期有效的家庭网关凭证，用 password 遮起来。
         Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = scheme.surface), shape = MaterialTheme.shapes.extraLarge, elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)) {
             Column(Modifier.padding(12.dp)) {
