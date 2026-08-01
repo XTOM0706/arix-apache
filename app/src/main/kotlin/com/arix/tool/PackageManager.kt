@@ -180,8 +180,6 @@ fun createBuiltInPackages(context: Context): List<PackageDef> = listOf(
     // 不会出现「索引让模型调一个不存在的工具」。用户关掉本包时 disabledCapabilitiesNote 会告诉模型怎么申请。
     PackageDef("operit_compat", "Operit兼容层", "加载.skill/.toolpkg/MCP配置，支持Operit生态。", "Operit",
         listOf(SkillReadTool(context)), enabledByDefault = true),
-    PackageDef("operit_market", "云端市场", "GitHub Issues 包市场，搜索安装脚本/沙盒包/Skill/MCP。", "Operit",
-        listOf(), enabledByDefault = true),
     // plugin_creator 是 AI 的自我扩展入口(能给自己新增技能/沙盒包/MCP 工具)，每次真正安装/卸载都会
     // 走 ToolPermissionManager.checkCapability 单独问用户确认——包本身默认开只是让它「可被调用」，
     // 不代表装东西不用同意。

@@ -390,6 +390,54 @@ object OperitCompat {
         val kvRegex = Regex("""$key:\s*(.+)""")
         return kvRegex.find(fm)?.groupValues?.get(1)?.trim()
     }
+
+    // ---- 通用 GitHub 下载器（Apache-2.0 精简版保留；云端市场已移除，但 https 直链下载 skill/包仍用它）----
+    private val GH_MIRRORS = listOf("", "https://ghfast.top/", "https://ghproxy.net/", "https://gh.llkk.cc/", "https://gh-proxy.com/", "https://hub.gitmirror.com/")
+
+    /** 带 GitHub 镜像回退的直连下载器。非 GitHub 域名照常直连。 */
+    fun openGh(rawUrl: String, connectMs: Int = 8000, readMs: Int = 20000): HttpURLConnection? {
+        val isGithub = rawUrl.contains("github.com") || rawUrl.contains("githubusercontent.com") || rawUrl.contains("codeload.github")
+        val candidates = if (isGithub) GH_MIRRORS else listOf("")
+        for (prefix in candidates) {
+            val u = if (prefix.isEmpty()) rawUrl else prefix + rawUrl
+            var conn: HttpURLConnection? = null
+            try {
+                conn = URL(u).openConnection() as HttpURLConnection
+                conn.instanceFollowRedirects = true
+                conn.connectTimeout = connectMs; conn.readTimeout = readMs
+                conn.setRequestProperty("User-Agent", "Arix/1.0")
+                if (conn.responseCode in 200..299) return conn
+                conn.disconnect()
+            } catch (_: Exception) { runCatching { conn?.disconnect() } }
+        }
+        return null
+    }
+
+    /**
+     * 扫下载下来的可执行包，DANGER 判 true。有界读，坏文件当无害（返回 false）不阻断正常流程；
+     * .toolpkg 是 zip → 抽文本条目扫，.js → 直接扫。这条闸是「装即执行」的最后一道拦截。
+     */
+    fun scanIsDanger(file: File): Boolean = try {
+        val entries = if (file.name.endsWith(".toolpkg", true)) {
+            val list = ArrayList<Pair<String, String>>()
+            java.util.zip.ZipInputStream(file.inputStream().buffered()).use { zin ->
+                var e = zin.nextEntry
+                var total = 0
+                while (e != null && total < 8 * 1024 * 1024) {   // 总量上限，防 zip 炸弹
+                    if (!e.isDirectory && SkillSecurityScan.isTextFile(e.name)) {
+                        val bytes = zin.readBytes().let { if (it.size > 512 * 1024) it.copyOf(512 * 1024) else it }
+                        total += bytes.size
+                        list.add(e.name to String(bytes))
+                    }
+                    e = zin.nextEntry
+                }
+            }
+            list
+        } else {
+            listOf(file.name to file.readText(Charsets.UTF_8).take(512 * 1024))
+        }
+        SkillSecurityScan.scan(entries).level == "DANGER"
+    } catch (_: Throwable) { false }
 }
 
 // ============================================================
@@ -625,521 +673,6 @@ object McPToolKt {
     }
 }
 
-// ============================================================
-// 云端市场
-//   主源: Operit 官方 CDN (static.operit.app/market-stats) — 真实包索引，无限流
-//   兜底: GitHub Issues API (AAswordman/Operit*Market)
-// ============================================================
-object CloudMarketplace {
-    private const val API_BASE = "https://static.operit.app/market-stats"
-    private const val MARKET_OWNER = "AAswordman"
-    private const val SCRIPT_REPO = "OperitScriptMarket"
-    private const val PACKAGE_REPO = "OperitPackageMarket"
-    // 真源支持的四类
-    private val API_TYPES = listOf("script", "package", "skill", "mcp")
-
-    data class MarketItem(
-        val id: String,
-        val name: String,
-        val description: String,
-        val type: String,
-        val author: String,
-        val version: String,
-        val downloadUrl: String,          // 真实 .toolpkg 直链（GitHub release）
-        val tags: List<String> = emptyList(),
-        val commentsCount: Int = 0,
-        val reactions: Map<String, Int> = emptyMap(),
-        val downloads: Int = 0,
-        val featured: Boolean = false,
-        val htmlUrl: String = "",         // GitHub issue 页（评论/GitHub 按钮用）
-        val iconUrl: String = ""
-    )
-
-    // 最近一次抓取的错误（供 UI 显示限流/网络问题）
-    @Volatile var lastFetchError: String? = null
-        private set
-
-    data class MarketComment(val author: String, val body: String, val createdAt: String)
-
-    suspend fun searchPackages(ghToken: String? = null, query: String = "", type: String = ""): List<MarketItem> = withContext(Dispatchers.IO) {
-        lastFetchError = null
-        // 1) 主源：Operit 官方 CDN
-        val api = try { fetchOperitApi(query, type) } catch (e: Exception) {
-            if (lastFetchError == null) lastFetchError = e.message ?: "网络错误"
-            emptyList()
-        }
-        // 1.5) 公共 skill 源：并入（不脱 Operit，只补充公共 GitHub skill 仓库）；type 指定非 skill 时跳过
-        val publicSkills = if (type.isBlank() || type == "skill") try { searchPublicSkills(ghToken, query) } catch (_: Exception) { emptyList() } else emptyList()
-        if (api.isNotEmpty() || publicSkills.isNotEmpty()) { lastFetchError = null; return@withContext api + publicSkills }
-        // 2) 兜底：GitHub Issues
-        val gh = try { searchGitHub(ghToken, query, type) } catch (e: Exception) {
-            if (lastFetchError == null) lastFetchError = e.message ?: "网络错误"
-            emptyList()
-        }
-        if (gh.isNotEmpty()) {
-            lastFetchError = "官方源不可用，已回退 GitHub"
-            return@withContext gh
-        }
-        if (lastFetchError == null) lastFetchError = "云端市场暂无结果"
-        emptyList()
-    }
-
-    // ---- 主源：static.operit.app rank JSON ----
-    // rank/{type}-downloads-page-{n}.json → { totalPages, items:[{id,displayTitle,summaryDescription,
-    //   downloads,featured,authorLogin,authorAvatarUrl, metadata:{type,version,downloadUrl,...}, issue:{...}}] }
-    private fun fetchOperitApi(query: String, type: String, maxPagesPerType: Int = 3): List<MarketItem> {
-        val types = if (type.isBlank()) API_TYPES else listOf(type).filter { it in API_TYPES }
-        val out = mutableListOf<MarketItem>()
-        for (t in types) {
-            var page = 1
-            var totalPages = 1
-            while (page <= minOf(maxPagesPerType, totalPages)) {
-                val url = URL("$API_BASE/rank/$t-downloads-page-$page.json")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.connectTimeout = 10000; conn.readTimeout = 10000
-                conn.setRequestProperty("User-Agent", "Arix-Marketplace/1.0")
-                val code = conn.responseCode
-                if (code !in 200..299) { conn.disconnect(); break }
-                val json = JSONObject(conn.inputStream.bufferedReader().readText()); conn.disconnect()
-                totalPages = json.optInt("totalPages", 1)
-                val arr = json.optJSONArray("items") ?: break
-                if (arr.length() == 0) break
-                for (i in 0 until arr.length()) {
-                    val o = arr.optJSONObject(i) ?: continue
-                    out.add(parseApiItem(o, t))
-                }
-                page++
-            }
-        }
-        // 去重：同一 id 可能跨类型/翻页重复出现（否则 LazyColumn 相同 key 崩溃）
-        val deduped = out.distinctBy { it.id }
-        return if (query.isBlank()) deduped
-        else deduped.filter { it.name.contains(query, true) || it.description.contains(query, true) }
-    }
-
-    private fun parseApiItem(o: JSONObject, fallbackType: String): MarketItem {
-        val meta = o.optJSONObject("metadata")
-        val issue = o.optJSONObject("issue")
-        val labels = issue?.optJSONArray("labels")?.let { arr ->
-            (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.optString("name", "")?.ifBlank { null } }
-        } ?: emptyList()
-        val reactions = issue?.optJSONObject("reactions")?.let { r -> mapOf(
-            "👍" to r.optInt("+1", 0),
-            "❤️" to r.optInt("heart", 0),
-            "🚀" to r.optInt("rocket", 0),
-            "👀" to r.optInt("eyes", 0),
-            "😄" to (r.optInt("laugh", 0) + r.optInt("hooray", 0)),
-            "😕" to r.optInt("confused", 0),
-            "👎" to r.optInt("-1", 0),
-            "total" to r.optInt("total_count", 0)
-        ).filter { it.value > 0 } } ?: emptyMap()
-        return MarketItem(
-            id = o.optString("id", meta?.optString("projectId", "") ?: ""),
-            name = o.optString("displayTitle", "").ifBlank { o.optString("id", "") },
-            description = o.optString("summaryDescription", "").trim(),
-            type = meta?.optString("type", "")?.ifBlank { null } ?: fallbackType,
-            author = o.optString("authorLogin", "").ifBlank { meta?.optString("publisherLogin", "") ?: "" },
-            version = meta?.optString("version", "")?.ifBlank { null } ?: "latest",
-            downloadUrl = meta?.optString("downloadUrl", "") ?: "",
-            tags = labels,
-            commentsCount = issue?.optInt("comments", 0) ?: 0,
-            reactions = reactions,
-            downloads = o.optInt("downloads", 0),
-            featured = o.optBoolean("featured", false),
-            htmlUrl = issue?.optString("html_url", "") ?: "",
-            iconUrl = o.optString("authorAvatarUrl", "")
-        )
-    }
-
-    /** 公共 skill 源：搜 GitHub 上带 skill 的公共仓库（兼容 Claude 式 SKILL.md），并入市场，不脱离 Operit 源、只做补充。 */
-    fun searchPublicSkills(ghToken: String?, query: String, max: Int = 20): List<MarketItem> {
-        return try {
-            val q = java.net.URLEncoder.encode((query.trim() + " skill").trim() + " in:name,description,topics", "UTF-8")
-            val url = URL("https://api.github.com/search/repositories?q=$q&sort=stars&order=desc&per_page=$max")
-            val conn = url.openConnection() as HttpURLConnection
-            conn.connectTimeout = 10000; conn.readTimeout = 10000
-            conn.setRequestProperty("User-Agent", "Arix-Marketplace/1.0")
-            conn.setRequestProperty("Accept", "application/vnd.github+json")
-            if (!ghToken.isNullOrBlank()) conn.setRequestProperty("Authorization", "Bearer $ghToken")
-            val code = conn.responseCode
-            if (code !in 200..299) { conn.disconnect(); return emptyList() }
-            val json = JSONObject(conn.inputStream.bufferedReader().readText()); conn.disconnect()
-            val arr = json.optJSONArray("items") ?: return emptyList()
-            val out = ArrayList<MarketItem>(arr.length())
-            for (i in 0 until arr.length()) {
-                val o = arr.optJSONObject(i) ?: continue
-                val owner = o.optJSONObject("owner")
-                val html = o.optString("html_url", "")
-                out.add(MarketItem(
-                    id = "gh:" + o.optString("full_name", html),
-                    name = o.optString("name", ""),
-                    description = o.optString("description", "").trim(),
-                    type = "skill",
-                    author = owner?.optString("login", "") ?: "",
-                    version = "latest",
-                    downloadUrl = html,   // 走「从 GitHub 仓库装 skill」流程
-                    tags = (o.optJSONArray("topics")?.let { t -> (0 until t.length()).map { t.optString(it) } } ?: emptyList()),
-                    downloads = o.optInt("stargazers_count", 0),
-                    htmlUrl = html,
-                    iconUrl = owner?.optString("avatar_url", "") ?: "",
-                ))
-            }
-            out
-        } catch (_: Exception) { emptyList() }
-    }
-
-    suspend fun searchGitHub(ghToken: String?, query: String, type: String): List<MarketItem> = withContext(Dispatchers.IO) {
-        val items = mutableListOf<MarketItem>()
-        // 包仓库：package/skill/mcp 三类靠 label 区分
-        if (type == "" || type == "package" || type == "skill" || type == "mcp") {
-            val label = when (type) {
-                "package" -> "+label:package-artifact"
-                "skill" -> "+label:skill"
-                "mcp" -> "+label:mcp"
-                else -> ""
-            }
-            items.addAll(fetchRepoIssues(PACKAGE_REPO, ghToken, query, label, isScript = false))
-        }
-        // 脚本仓库
-        if (type == "" || type == "script") {
-            items.addAll(fetchRepoIssues(SCRIPT_REPO, ghToken, query, "", isScript = true))
-        }
-        items
-    }
-
-    // 翻页拉全一个仓库的 open issues（GitHub search API），最多 maxPages 页
-    private fun fetchRepoIssues(repo: String, ghToken: String?, query: String, labelFilter: String, isScript: Boolean, maxPages: Int = 5): List<MarketItem> {
-        val out = mutableListOf<MarketItem>()
-        val searchQuery = if (query.isNotBlank()) "+${query.replace(" ", "+")}" else ""
-        var page = 1
-        while (page <= maxPages) {
-            try {
-                val url = URL("https://api.github.com/search/issues?q=repo:$MARKET_OWNER/$repo$searchQuery$labelFilter+state:open&sort=updated&order=desc&per_page=100&page=$page")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.connectTimeout = 10000; conn.readTimeout = 10000
-                conn.setRequestProperty("Accept", "application/vnd.github.v3+json")
-                conn.setRequestProperty("User-Agent", "Arix-Marketplace/1.0")
-                if (ghToken != null) conn.setRequestProperty("Authorization", "token $ghToken")
-                val code = conn.responseCode
-                if (code !in 200..299) {
-                    conn.disconnect()
-                    if (out.isEmpty()) lastFetchError =
-                        if (code == 403 || code == 429) "GitHub 限流（未登录约10次/分钟），建议填入 Token 后重试" else "GitHub 请求失败 HTTP $code"
-                    break
-                }
-                val json = JSONObject(conn.inputStream.bufferedReader().readText()); conn.disconnect()
-                val totalCount = json.optInt("total_count", 0)
-                val issues = json.optJSONArray("items") ?: break
-                if (issues.length() == 0) break
-                for (i in 0 until issues.length()) {
-                    val issue = issues.optJSONObject(i) ?: continue
-                    out.add(parseIssue(issue, isScript))
-                }
-                if (out.size >= totalCount || issues.length() < 100) break
-                page++
-            } catch (e: Exception) {
-                if (out.isEmpty()) lastFetchError = e.message ?: "网络错误"
-                break
-            }
-        }
-        return out
-    }
-
-    private fun parseIssue(issue: JSONObject, isScript: Boolean): MarketItem {
-        val number = issue.optInt("number", 0)
-        val rawTitle = issue.optString("title", "")
-        val rawBody = issue.optString("body", "")
-        // Operit 把结构化元数据嵌在 body 的 <!-- operit-market-json: {...} --> 注释里
-        val meta = parseOperitMeta(rawBody)
-        val name = (meta?.optString("name")?.ifBlank { null }) ?: rawTitle
-        val desc = ((meta?.optString("description")?.ifBlank { null }) ?: rawBody.substringBefore("<!--")).trim().take(300)
-        val version = (meta?.optString("version")?.ifBlank { null }) ?: "latest"
-        val labels = issue.optJSONArray("labels")?.let { arr ->
-            (0 until arr.length()).map { arr.optJSONObject(it)?.optString("name", "") ?: "" }.filter { it.isNotBlank() }
-        } ?: emptyList()
-        val itemType = if (isScript) "script" else when {
-            labels.any { "package-artifact" in it } -> "package"
-            labels.any { "skill" in it } -> "skill"
-            labels.any { "mcp" in it } -> "mcp"
-            else -> "package"
-        }
-        val comments = issue.optInt("comments", 0)
-        val reactionObj = issue.optJSONObject("reactions")
-        val reactions = if (reactionObj != null) mapOf(
-            "👍" to reactionObj.optInt("+1", 0),
-            "❤️" to reactionObj.optInt("heart", 0),
-            "🚀" to reactionObj.optInt("rocket", 0),
-            "👀" to reactionObj.optInt("eyes", 0),
-            "😄" to (reactionObj.optInt("laugh", 0) + reactionObj.optInt("hooray", 0)),
-            "😕" to reactionObj.optInt("confused", 0),
-            "👎" to reactionObj.optInt("-1", 0),
-            "total" to reactionObj.optInt("total_count", 0)
-        ).filter { it.value > 0 } else emptyMap()
-        val htmlUrl = issue.optString("html_url", "")
-        return MarketItem(
-            id = if (isScript) "script_$number" else "$number",
-            name = name, description = desc, type = itemType,
-            author = issue.optJSONObject("user")?.optString("login", "") ?: "",
-            version = version,
-            downloadUrl = meta?.optString("downloadUrl", "")?.ifBlank { null } ?: "",
-            tags = labels,
-            commentsCount = comments, reactions = reactions,
-            featured = labels.any { "featured" in it }, htmlUrl = htmlUrl
-        )
-    }
-
-    private fun parseOperitMeta(body: String): JSONObject? {
-        return try {
-            val m = Regex("<!--\\s*operit-market-json:\\s*(\\{.*?\\})\\s*-->", RegexOption.DOT_MATCHES_ALL).find(body)
-            m?.groupValues?.get(1)?.let { JSONObject(it) }
-        } catch (_: Exception) { null }
-    }
-
-    // 详情页按需加载真实评论（对齐 Operit：/issues/{n}/comments，单页50条）
-    // owner/repo/number 从 htmlUrl 解析（真源用字符串 id，无法从 id 反推）
-    suspend fun getIssueComments(item: MarketItem, ghToken: String? = null): List<MarketComment> = withContext(Dispatchers.IO) {
-        val m = Regex("github\\.com/([^/]+)/([^/]+)/issues/(\\d+)").find(item.htmlUrl)
-        val owner: String; val repo: String; val number: String
-        if (m != null) {
-            owner = m.groupValues[1]; repo = m.groupValues[2]; number = m.groupValues[3]
-        } else {
-            // 旧 GitHub 兜底路径：id 即 issue number
-            if (item.id.startsWith("loc_")) return@withContext emptyList()
-            owner = MARKET_OWNER
-            repo = if (item.id.startsWith("script_")) SCRIPT_REPO else PACKAGE_REPO
-            number = item.id.removePrefix("script_")
-        }
-        if (number.isBlank()) return@withContext emptyList()
-        try {
-            val url = URL("https://api.github.com/repos/$owner/$repo/issues/$number/comments?per_page=50")
-            val conn = url.openConnection() as HttpURLConnection
-            conn.connectTimeout = 10000; conn.readTimeout = 10000
-            conn.setRequestProperty("Accept", "application/vnd.github.v3+json")
-            conn.setRequestProperty("User-Agent", "Arix-Marketplace/1.0")
-            if (ghToken != null) conn.setRequestProperty("Authorization", "token $ghToken")
-            if (conn.responseCode !in 200..299) { conn.disconnect(); return@withContext emptyList() }
-            val arr = JSONArray(conn.inputStream.bufferedReader().readText()); conn.disconnect()
-            (0 until arr.length()).mapNotNull { i ->
-                val c = arr.optJSONObject(i) ?: return@mapNotNull null
-                MarketComment(
-                    author = c.optJSONObject("user")?.optString("login", "") ?: "",
-                    body = c.optString("body", "").trim(),
-                    createdAt = c.optString("created_at", "").take(10)
-                )
-            }
-        } catch (_: Exception) { emptyList() }
-    }
-
-    // GitHub 在国内常连不上：直连非 2xx/超时就依次套镜像前缀重试，返回第一个 2xx 的连接（调用方读完 disconnect）。
-    // 镜像清单参考 Operit GithubReleaseUtil（只取实测稳的几个，直连排第一，非 GitHub 的 url 也照常直连）。
-    private val GH_MIRRORS = listOf("", "https://ghfast.top/", "https://ghproxy.net/", "https://gh.llkk.cc/", "https://gh-proxy.com/", "https://hub.gitmirror.com/")
-    /** 国内直连 GitHub 常年不稳：非 2xx/超时就依次套镜像前缀重试。终端 APK 下载也复用它。 */
-    internal fun openGh(rawUrl: String, connectMs: Int = 8000, readMs: Int = 20000): HttpURLConnection? {
-        val isGithub = rawUrl.contains("github.com") || rawUrl.contains("githubusercontent.com") || rawUrl.contains("codeload.github")
-        val candidates = if (isGithub) GH_MIRRORS else listOf("")
-        for (prefix in candidates) {
-            val u = if (prefix.isEmpty()) rawUrl else prefix + rawUrl
-            var conn: HttpURLConnection? = null
-            try {
-                conn = URL(u).openConnection() as HttpURLConnection
-                conn.instanceFollowRedirects = true
-                conn.connectTimeout = connectMs; conn.readTimeout = readMs
-                conn.setRequestProperty("User-Agent", "Arix-Marketplace/1.0")
-                if (conn.responseCode in 200..299) return conn
-                conn.disconnect()
-            } catch (_: Exception) { runCatching { conn?.disconnect() } }   // 异常时也断开，别泄漏连接
-        }
-        return null
-    }
-
-    /** 边下边报进度地把连接内容写进文件：total<=0（无 Content-Length）时报不确定进度(-1f)。 */
-    private fun downloadTo(conn: HttpURLConnection, out: File, onProgress: ((Float) -> Unit)?) {
-        val total = conn.contentLengthLong
-        conn.inputStream.use { input ->
-            FileOutputStream(out).use { fos ->
-                val buf = ByteArray(16 * 1024); var read = 0L; var n = input.read(buf); var lastPct = -1
-                while (n >= 0) {
-                    fos.write(buf, 0, n); read += n; n = input.read(buf)
-                    if (onProgress != null) {
-                        if (total > 0) { val pct = (read * 100 / total).toInt(); if (pct != lastPct) { lastPct = pct; onProgress(pct / 100f) } }
-                        else onProgress(-1f)   // 不确定
-                    }
-                }
-            }
-        }
-    }
-
-    // 安装：优先下载真实 .toolpkg 直链到 operit_packages/，refresh() 即可加载真实工具；
-    // 无直链（如 skill/mcp 或 GitHub 兜底缺元数据）则写引用 json 占位。onProgress 报下载进度(0..1，或 -1=不确定)。
-    /**
-     * 扫下载下来的可执行包，DANGER 判 true。有界读，坏文件当无害（返回 false）不阻断正常流程；
-     * .toolpkg 是 zip → 抽文本条目扫，.js → 直接扫。这条闸是「装即执行」的最后一道拦截。
-     */
-    // internal：PluginCreatorTool 的联网安装路径复用同一把扫描器，别自己再扫一遍。
-    internal fun scanIsDanger(file: File): Boolean = try {
-        val entries = if (file.name.endsWith(".toolpkg", true)) {
-            val list = ArrayList<Pair<String, String>>()
-            java.util.zip.ZipInputStream(file.inputStream().buffered()).use { zin ->
-                var e = zin.nextEntry
-                var total = 0
-                while (e != null && total < 8 * 1024 * 1024) {   // 总量上限，防 zip 炸弹
-                    if (!e.isDirectory && SkillSecurityScan.isTextFile(e.name)) {
-                        val bytes = zin.readBytes().let { if (it.size > 512 * 1024) it.copyOf(512 * 1024) else it }
-                        total += bytes.size
-                        list.add(e.name to String(bytes))
-                    }
-                    e = zin.nextEntry
-                }
-            }
-            list
-        } else {
-            listOf(file.name to file.readText(Charsets.UTF_8).take(512 * 1024))
-        }
-        SkillSecurityScan.scan(entries).level == "DANGER"
-    } catch (_: Throwable) { false }
-
-    suspend fun downloadPackage(item: MarketItem, context: Context, onProgress: ((Float) -> Unit)? = null): Boolean = withContext(Dispatchers.IO) {
-        val dl = item.downloadUrl
-        if (dl.isNotBlank() && dl.endsWith(".toolpkg", ignoreCase = true)) {
-            return@withContext try {
-                val pkgDir = File(context.filesDir, "operit_packages").also { if (!it.exists()) it.mkdirs() }
-                val safeId = item.id.replace(Regex("[^a-zA-Z0-9_.-]"), "_")
-                val out = File(pkgDir, "$safeId.toolpkg")
-                val conn = openGh(dl) ?: return@withContext false   // 直连+镜像都失败
-                downloadTo(conn, out, onProgress)
-                conn.disconnect()
-                // 装前扫毒。**会执行代码的包这条路以前完全跳过扫描**（扫描只长在 installFromGitHub 上），
-                // 而装 .toolpkg = 立即在 WebView 里求值它的 JS。扫出 DANGER 直接删文件拒装，别让它落地。
-                if (scanIsDanger(out)) { runCatching { out.delete() }; return@withContext false }
-                OperitCompat.refresh()   // 重扫本地包目录，注册真实工具
-                true
-            } catch (_: Exception) { false }
-        }
-        // Operit 传统脚本包（市场 script 类型，.js 单文件带 /* METADATA */ + exports.<fn>）
-        if (dl.isNotBlank() && dl.endsWith(".js", ignoreCase = true)) {
-            return@withContext try {
-                val pkgDir = File(context.filesDir, "operit_packages").also { if (!it.exists()) it.mkdirs() }
-                val safeId = item.id.replace(Regex("[^a-zA-Z0-9_.-]"), "_")
-                val out = File(pkgDir, "$safeId.js")
-                val conn = openGh(dl) ?: return@withContext false
-                downloadTo(conn, out, onProgress)
-                conn.disconnect()
-                if (scanIsDanger(out)) { runCatching { out.delete() }; return@withContext false }
-                OperitCompat.refresh()
-                true
-            } catch (_: Exception) { false }
-        }
-        try {
-            // 目录名必须与加载器 loadLocalPackages() 实际扫描的目录一致：
-            // mcp 是【单数】operit_mcp；skill/package 才是 operit_skills/operit_packages。
-            // 旧代码统一 "operit_${type}s" 会把 mcp 写进 operit_mcps(复数)→ 永不加载。
-            val dirName = when (item.type) {
-                "mcp" -> "operit_mcp"
-                "skill" -> "operit_skills"
-                "package", "sandbox" -> "operit_packages"
-                else -> "operit_${item.type}s"
-            }
-            val pkgDir = File(context.filesDir, dirName)
-            if (!pkgDir.exists()) pkgDir.mkdirs()
-            val safeId = item.id.replace(Regex("[^a-zA-Z0-9_.-]"), "_")
-            val refFile = File(pkgDir, "$safeId.json")
-            // MCP 加载器会直连 url 做 discoverMcpTools —— 必须是真实 MCP 端点，GitHub issue 页不是端点。
-            // 仅当拿到 http(s) 且非 .toolpkg/非 issue 页的直链才写为端点；否则写空 url(加载器跳过、不产生坏工具)，
-            // 把来源页留在 sourceUrl 供用户在 MCP 配置里补真实端点。
-            val urlField = if (item.type == "mcp") {
-                item.downloadUrl.takeIf { it.startsWith("http", ignoreCase = true) && !it.endsWith(".toolpkg", ignoreCase = true) && "/issues/" !in it } ?: ""
-            } else item.htmlUrl.ifBlank { item.downloadUrl }
-            refFile.writeText(JSONObject().apply {
-                put("id", item.id); put("name", item.name)
-                put("type", item.type); put("url", urlField)
-                put("description", item.description)
-                if (item.type == "mcp" && urlField.isBlank() && item.htmlUrl.isNotBlank()) put("sourceUrl", item.htmlUrl)
-            }.toString())
-            OperitCompat.refresh()   // 重扫本地目录，立即加载(此前遗漏，装完要重启才生效)
-            true
-        } catch (_: Exception) { false }
-    }
-
-    // 从任意【公共 GitHub 仓库】安装 skill/包（不止 Operit forge）：下载仓库 zip → 找 SKILL.md / .toolpkg 落地 → refresh。
-    // 兼容 Claude 式 skill（SKILL.md + 同目录脚本/资源）。
-    data class InstallResult(val ok: Boolean, val message: String, val needsConfirm: Boolean = false, val riskDetail: String = "")
-
-    suspend fun installFromGitHub(url: String, context: Context, force: Boolean = false): InstallResult = withContext(Dispatchers.IO) {
-        val m = Regex("github\\.com/([^/\\s]+)/([^/\\s#?]+)(?:/tree/([^/\\s#?]+))?").find(url)
-            ?: return@withContext InstallResult(false, "无法解析地址（形如 github.com/用户/仓库）")
-        val owner = m.groupValues[1]; val repo = m.groupValues[2].removeSuffix(".git")
-        val branches = m.groupValues[3].takeIf { it.isNotBlank() }?.let { listOf(it) } ?: listOf("main", "master")
-        for (b in branches) {
-            val bytes = try {
-                // 用 github.com/…/archive（镜像可代理）而非 codeload（多数镜像不代理它）；直连+国内镜像依次试。
-                val conn = openGh("https://github.com/$owner/$repo/archive/refs/heads/$b.zip", readMs = 60000) ?: continue
-                val b = conn.inputStream.use { it.readBytes() }
-                conn.disconnect()
-                if (b.size > 30 * 1024 * 1024) return@withContext InstallResult(false, "仓库太大（${b.size / 1024 / 1024}MB），装 skill 请用精简的仓库")
-                b
-            } catch (_: Exception) { continue }
-            // 读出所有条目（去掉顶层 repo-branch/ 前缀）
-            val entries = ArrayList<Pair<String, ByteArray>>()
-            try {
-                var total = 0L
-                ZipInputStream(java.io.ByteArrayInputStream(bytes)).use { zis ->
-                    var e = zis.nextEntry
-                    while (e != null) {
-                        if (!e.isDirectory) {
-                            val n = e.name.substringAfter('/')
-                            if (n.isNotBlank() && !n.contains("..")) {
-                                val d = zis.readBytes(); total += d.size
-                                if (total > 60L * 1024 * 1024) return@withContext InstallResult(false, "仓库解压后过大（>60MB），已中止")   // 防 zip 炸弹 OOM
-                                entries.add(n to d)
-                            }
-                        }
-                        e = zis.nextEntry
-                    }
-                }
-            } catch (_: Exception) { continue }
-            // SkillSpector 式安全审查：装之前先静态扫一遍，高危直接拒装
-            val scan = SkillSecurityScan.scan(entries.filter { SkillSecurityScan.isTextFile(it.first) }.map { it.first to String(it.second) })
-            if (scan.level == "DANGER" && !force) return@withContext InstallResult(false, "🛑 安全审查发现高危内容，已暂停安装", needsConfirm = true, riskDetail = scan.detail())
-
-            var skills = 0; var pkgs = 0
-            val pkgRoot = File(context.filesDir, "operit_packages").also { it.mkdirs() }
-            val skillRoot = File(context.filesDir, "operit_skills").also { it.mkdirs() }
-            entries.filter { it.first.endsWith(".toolpkg", true) }.forEach { (n, data) -> File(pkgRoot, File(n).name).writeBytes(data); pkgs++ }
-
-            val used = HashSet<String>()
-            fun uniqueDir(base: String): File {
-                var name = base.replace(Regex("[^a-zA-Z0-9_.\\u4e00-\\u9fa5-]"), "_").ifBlank { repo }
-                var i = 1; while (!used.add(name)) name = "${name}_${i++}"
-                return File(skillRoot, name).also { it.deleteRecursively(); it.mkdirs() }
-            }
-            // 每个含 SKILL.md 的目录=一个 skill；文件按「最深祖先 skill 目录」归属，避免嵌套 skill 互相串包
-            val skillDirs = entries.filter { it.first.substringAfterLast('/').equals("SKILL.md", true) }
-                .map { it.first.substringBeforeLast('/', "") }.distinct()
-            val dirToOut = LinkedHashMap<String, File>()
-            skillDirs.sortedByDescending { it.length }.forEach { d -> dirToOut[d] = uniqueDir(d.substringAfterLast('/').ifBlank { repo }) }
-            if (skillDirs.isNotEmpty()) {
-                entries.forEach { (fn, data) ->
-                    val ownerDir = skillDirs.filter { d -> if (d.isBlank()) !fn.contains('/') else (fn == "$d/SKILL.md" || fn.startsWith("$d/")) }.maxByOrNull { it.length } ?: return@forEach
-                    val outDir = dirToOut[ownerDir]!!
-                    val rel = if (ownerDir.isBlank()) fn else fn.removePrefix("$ownerDir/")
-                    val f = File(outDir, rel)
-                    if (f.canonicalPath.startsWith(outDir.canonicalPath + File.separator)) { f.parentFile?.mkdirs(); f.writeBytes(data) }
-                }
-                skills += dirToOut.size
-            }
-            // OpenCode 的 agents/commands（Markdown+frontmatter，body=系统提示）也当作 skill 导入
-            entries.filter { (fn, _) ->
-                val l = fn.lowercase()
-                l.endsWith(".md") && !l.endsWith("skill.md") && (l.contains("/agents/") || l.startsWith("agents/") || l.contains("/commands/") || l.startsWith("commands/"))
-            }.forEach { (fn, data) ->
-                File(uniqueDir(fn.substringAfterLast('/').removeSuffix(".md")), "SKILL.md").writeBytes(data); skills++
-            }
-            if (skills > 0 || pkgs > 0) { OperitCompat.refresh(); return@withContext InstallResult(true, "已从 $owner/$repo@$b 安装 $skills 个 skill、$pkgs 个包 · ${scan.summary()}") }
-        }
-        InstallResult(false, "没找到可安装内容（仓库根或子目录里要有 SKILL.md 或 .toolpkg）")
-    }
-
-}
 
 // ============================================================
 // 插件制作工具
@@ -1386,8 +919,8 @@ class PluginCreatorTool(private val context: Context) : Tool {
                 url.endsWith(".toolpkg", true) -> {
                     val f = downloadToCacheCapped(url, "toolpkg", packageUrlMaxBytes)
                         ?: return ToolResult("下载失败，或内容超过 ${packageUrlMaxBytes / 1024 / 1024}MB 上限（超限直接整体放弃）", isError = true)
-                    // 扫描器住在 CloudMarketplace 里（和市场下载走同一把），不在 OperitCompat 上
-                    if (CloudMarketplace.scanIsDanger(f)) { f.delete(); return ToolResult("安全扫描判定高危，已拒绝安装", isError = true) }
+                    // 扫描器：OperitCompat 的通用安全扫描（下载 skill/包 的最后一道拦截）
+                    if (OperitCompat.scanIsDanger(f)) { f.delete(); return ToolResult("安全扫描判定高危，已拒绝安装", isError = true) }
                     val p = OperitCompat.parseToolPkg(f)
                     if (p == null) { f.delete(); return ToolResult("无法从这个 .toolpkg 里解析出有效包（缺 manifest 或工具声明）", isError = true) }
                     parsed = p; stagedFile = f
@@ -1551,15 +1084,15 @@ class PluginCreatorTool(private val context: Context) : Tool {
 
     private fun hostOf(url: String): String = try { URL(url).host ?: url } catch (_: Exception) { url }
 
-    /** 下载文本，超过 maxBytes 直接整体放弃（不留半截内容）。走 CloudMarketplace.openGh：
+    /** 下载文本，超过 maxBytes 直接整体放弃（不留半截内容）。走 OperitCompat.openGh：
      *  非 GitHub 域名照常直连，GitHub 域名享受同一套镜像重试，不用重开一个下载器/HTTP 客户端。 */
     private fun downloadTextCapped(url: String, maxBytes: Int): String? {
-        val conn = CloudMarketplace.openGh(url) ?: return null
+        val conn = OperitCompat.openGh(url) ?: return null
         return try { readCapped(conn, maxBytes)?.let { String(it, Charsets.UTF_8) } } finally { conn.disconnect() }
     }
 
     private fun downloadToCacheCapped(url: String, ext: String, maxBytes: Int): File? {
-        val conn = CloudMarketplace.openGh(url) ?: return null
+        val conn = OperitCompat.openGh(url) ?: return null
         return try {
             val bytes = readCapped(conn, maxBytes) ?: return null
             File(context.cacheDir, "plugin_stage_${System.currentTimeMillis()}.$ext").also { it.writeBytes(bytes) }

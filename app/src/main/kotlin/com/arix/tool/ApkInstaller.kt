@@ -73,7 +73,7 @@ object ApkInstaller {
         try {
             withContext(Dispatchers.IO) {
                 // GitHub 直链走镜像回退（国内直连不稳）；自建地址原样直连
-                val conn = CloudMarketplace.openGh(url, readMs = 60_000)
+                val conn = com.arix.tool.OperitCompat.openGh(url, readMs = 60_000)
                     ?: throw IllegalStateException("连不上下载源（直连与镜像都失败），换个网络再试")
                 try {
                     val total = conn.contentLengthLong

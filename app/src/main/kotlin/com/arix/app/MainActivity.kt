@@ -178,12 +178,11 @@ import androidx.compose.ui.draw.drawWithContent
  import com.arix.cloudapi.model.ChatMessage
  import android.content.Intent
  import androidx.compose.material.icons.outlined.Warning
- import com.arix.tool.PackageManager as XtomPackageManager
+import com.arix.tool.PackageManager as XtomPackageManager
 import com.arix.tool.PackageDef
- import com.arix.tool.OperitCompat
- import com.arix.tool.CloudMarketplace
- import com.arix.tool.ImportExport
- import com.arix.tool.PluginCreatorTool
+import com.arix.tool.OperitCompat
+import com.arix.tool.ImportExport
+import com.arix.tool.PluginCreatorTool
 import com.arix.tool.TtsTool
 import com.arix.tool.ShellTool
 import com.arix.app.ui.topChromeGapHeight
@@ -542,7 +541,6 @@ import androidx.compose.ui.unit.IntOffset
              nav("packages", Icons.Outlined.Public, "本地包", "工具与扩展"),
              nav("file_history", Icons.Outlined.History, "改动历史", "工具与扩展"),
              nav("chat_appearance", Icons.Outlined.ChatBubbleOutline, "聊天外观", "工具与扩展"),
-             nav("operit", Icons.Outlined.Add, "云端市场", "工具与扩展"),
              nav("plugins", Icons.Outlined.Add, "插件制作", "工具与扩展"),
              nav("terminal", Icons.Outlined.Settings, "终端", "工具与扩展"),
              nav("permissions", Icons.Outlined.Menu, "权限管理", "系统"),
@@ -1026,7 +1024,6 @@ import androidx.compose.ui.unit.IntOffset
                      "favorites" -> FavoritesPage(context = context)
                      "memory" -> MemoryPage(scope = scope, context = context)
                      "packages" -> PackagesPage(scope = scope, context = context)
-                     "operit" -> OperitPage(scope = scope, context = context)
                      "wake" -> WakePage(scope = scope, context = context)
                      "permissions" -> PermissionsPage(context = context)
                      "plugins" -> PluginCreatorPage(scope = scope, context = context)
@@ -1289,9 +1286,7 @@ import androidx.compose.ui.unit.IntOffset
                  SettingsRow(Icons.Outlined.Public, tr("本地包"), "packages", tr("本机装的工具插件包，管理启用/禁用。启用越多 AI 能力越强，但提示词更长、可能更慢。")),
                  SettingsRow(Icons.Outlined.History, tr("文件改动历史"), "file_history", tr("AI 改过工作目录里的哪些文件、改了什么，能看 diff 并一键退回改动前。快照存在 AI 够不到的地方，它删不掉自己的后悔药。")),
                  SettingsRow(Icons.Outlined.ChatBubbleOutline, tr("聊天外观"), "chat_appearance", tr("用户侧和 AI 侧分别调气泡圆角/尖角/配色、头像大小与圆角、是否显示头像和名字，页面上方实时预览。")),
-                 SettingsRow(Icons.Outlined.Add, tr("云端市场"), "operit", tr("下载别人做好的工具插件。")),
                  SettingsRow(Icons.Outlined.Add, tr("插件制作"), "plugins", tr("自己做自定义工具插件(Skill/沙盒/MCP)。")),
-                 SettingsRow(Icons.Outlined.Settings, tr("终端"), "terminal", tr("独立「Arix 终端」App（proot + 原版 Termux，apt 随便装不打架）：装上后本页可交互使用，AI 也走它跑命令。")),
              ),
              tr("系统") to listOf(
                  SettingsRow(Icons.Outlined.Menu, tr("权限管理"), "permissions", tr("管理 AI 工具的权限(录音/相机/定位等)，控制哪些能用。收紧→更安全但某些功能用不了；放开→更好用但风险高。")),
@@ -1360,8 +1355,8 @@ import androidx.compose.ui.unit.IntOffset
  /** 页面 → 顶部标题。走 tr() 过 33 语言译表；不要 remember 它，静态 local 换语言时要能重算。 */
  private fun pageTitle(page: String): String = when (page) {
      "config" -> tr("模型配置"); "stt" -> tr("语音识别"); "tts" -> tr("语音朗读"); "voice_clone" -> tr("声音克隆"); "conversations" -> tr("对话管理")
-     "memory" -> tr("记忆管理"); "packages" -> tr("本地包"); "operit" -> tr("云端市场"); "wake" -> tr("语音唤醒")
-     "permissions" -> tr("权限管理"); "plugins" -> tr("插件制作"); "import" -> tr("导入导出"); "terminal" -> tr("终端")
+     "memory" -> tr("记忆管理"); "packages" -> tr("本地包"); "wake" -> tr("语音唤醒")
+     "permissions" -> tr("权限管理"); "plugins" -> tr("插件制作"); "import" -> tr("导入导出")
      "monitor" -> tr("监控 & 风控"); "activity_center" -> tr("AI 活动中心"); "crash" -> tr("崩溃报告"); "settings" -> tr("应用设置"); "personalization" -> tr("个性化"); "dialog_settings" -> tr("对话设置"); "tool_keys" -> tr("工具密钥"); "search_settings" -> tr("联网搜索"); "settings_hub" -> tr("设置"); "about" -> tr("关于软件"); "favorites" -> tr("收藏"); "files" -> tr("文件"); "file_history" -> tr("文件改动历史"); "chat_appearance" -> tr("聊天外观"); "projects" -> tr("项目"); "usage" -> tr("使用统计"); "user_scripts" -> tr("用户脚本")
      "proxy" -> tr("网络代理"); "storage" -> tr("存储占用"); "app_log" -> tr("运行日志"); "update" -> tr("检查更新")
      else -> "Arix"
