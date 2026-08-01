@@ -32,8 +32,6 @@ import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.foundation.text.InlineTextContent
-import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
@@ -64,8 +62,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
-import androidx.compose.ui.text.Placeholder
-import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -219,12 +215,6 @@ fun decodeHtmlEntities(s: String): String {
 }
 
 // ============================================================
-// mhchem \ce{...} → 纯 LaTeX 转换
-// JLaTeXMath 默认不带 mhchem 包，直接把 \ce{} 丢给它会报错，故先把化学式转成它能渲染的 LaTeX：
-//   数字→下标(H2→H_2)、电荷 ^2-/+→上标、-> <-> <=>→箭头、->[X]→\xrightarrow{X}、
-//   状态(s)(l)(g)(aq)、*→\cdot、系数前缀保留。解析不了的尽量原样退回，绝不抛异常。
-// ============================================================
-
 // 从 open 处（应指向 '{'）找配对的 '}'，返回其索引；找不到则返回末尾索引。
 private fun matchBrace(s: String, open: Int): Int {
     var depth = 0
@@ -234,129 +224,6 @@ private fun matchBrace(s: String, open: Int): Int {
         i++
     }
     return s.length - 1
-}
-
-// 把 \ce{...} 内部内容转成纯 LaTeX。
-private fun mhchemBodyToLatex(body: String): String {
-    val s = body
-    val n = s.length
-    val sb = StringBuilder()
-    var i = 0
-    // 前一个已输出 token 是否“原子性”（元素/闭括号/上下标块）——决定紧跟的数字是下标还是系数。
-    // 必须用显式布尔、别回看 sb 猜：箭头/命令输出的 LaTeX 词末尾是字母(如 \rightarrow 结尾的 w)，
-    // 回看会把箭头后的系数(如 2H2 + O2 -> 2H2O 里的 2)误判成挂在箭头上的下标。
-    var prevAtomic = false
-    // 读取箭头可选标注 [above]([below])
-    fun readArrowLabels(): Pair<String?, String?> {
-        var above: String? = null; var below: String? = null
-        if (i < n && s[i] == '[') { val e = s.indexOf(']', i + 1); if (e > i) { above = s.substring(i + 1, e).trim(); i = e + 1 } }
-        if (i < n && s[i] == '[') { val e = s.indexOf(']', i + 1); if (e > i) { below = s.substring(i + 1, e).trim(); i = e + 1 } }
-        return above to below
-    }
-    // 标注含反斜杠(如 \Delta)则原样透传，否则按正体文字处理
-    fun labelTex(raw: String): String = if (raw.contains('\\')) raw else "\\mathrm{${raw.replace(" ", "\\,")}}"
-    while (i < n) {
-        val c = s[i]
-        when {
-            c == ' ' || c == '\t' -> { if (sb.isNotEmpty() && sb.last() != ' ') sb.append(' '); i++ }
-            // —— 箭头（长匹配在前）：箭头后 prevAtomic=false，紧跟数字才会正确判为系数 ——
-            s.startsWith("<=>>", i) || s.startsWith("<<=>", i) -> { sb.append(" \\rightleftharpoons "); prevAtomic = false; i += 4 }
-            s.startsWith("<=>", i) -> {
-                i += 3; val (a, b) = readArrowLabels()
-                when {
-                    a == null -> sb.append(" \\rightleftharpoons ")
-                    b == null -> sb.append(" \\overset{${labelTex(a)}}{\\rightleftharpoons} ")
-                    else -> sb.append(" \\underset{${labelTex(b)}}{\\overset{${labelTex(a)}}{\\rightleftharpoons}} ")
-                }
-                prevAtomic = false
-            }
-            s.startsWith("<->", i) -> { i += 3; sb.append(" \\leftrightarrow "); prevAtomic = false }
-            s.startsWith("->", i) -> {
-                i += 2; val (a, b) = readArrowLabels()
-                when {
-                    a == null -> sb.append(" \\rightarrow ")
-                    b == null -> sb.append(" \\xrightarrow{${labelTex(a)}} ")
-                    else -> sb.append(" \\xrightarrow[${labelTex(b)}]{${labelTex(a)}} ")
-                }
-                prevAtomic = false
-            }
-            s.startsWith("<-", i) -> {
-                i += 2; val (a, b) = readArrowLabels()
-                when {
-                    a == null -> sb.append(" \\leftarrow ")
-                    b == null -> sb.append(" \\xleftarrow{${labelTex(a)}} ")
-                    else -> sb.append(" \\xleftarrow[${labelTex(b)}]{${labelTex(a)}} ")
-                }
-                prevAtomic = false
-            }
-            // —— 状态 (s)(l)(g)(aq)（其余括号当分组）——
-            c == '(' && run { val e = s.indexOf(')', i + 1); e > i && s.substring(i + 1, e).trim().lowercase() in setOf("s", "l", "g", "aq") } -> {
-                val e = s.indexOf(')', i + 1)
-                sb.append("(\\mathrm{${s.substring(i + 1, e).trim().lowercase()}})"); prevAtomic = true; i = e + 1
-            }
-            // —— * / · → \cdot（水合物点乘等）——
-            c == '*' || c == '·' -> { sb.append(" \\cdot "); prevAtomic = false; i++ }
-            // —— 显式上标/电荷 ^{...} 或 ^2- ——
-            c == '^' -> {
-                i++
-                if (i < n && s[i] == '{') {
-                    val e = matchBrace(s, i)
-                    sb.append("^{").append(s.substring(i + 1, e)).append("}"); i = e + 1
-                } else {
-                    val st = i
-                    while (i < n && s[i].isDigit()) i++
-                    if (i < n && (s[i] == '+' || s[i] == '-')) i++
-                    sb.append("^{").append(if (i > st) s.substring(st, i) else "").append("}")
-                }
-                prevAtomic = true   // 上标仍属同一原子团
-            }
-            // —— 数字：紧跟元素/闭括号则下标，否则为系数 ——
-            c.isDigit() -> {
-                if (prevAtomic) {
-                    val st = i; while (i < n && (s[i].isDigit() || s[i] == '.')) i++
-                    sb.append("_{").append(s.substring(st, i)).append("}")
-                } else {
-                    val st = i; while (i < n && (s[i].isDigit() || s[i] == '.' || s[i] == '/')) i++
-                    sb.append(s.substring(st, i))
-                }
-                prevAtomic = false
-            }
-            // —— +：贴着物种且不接元素/数字=电荷；否则=反应加号 ——
-            c == '+' -> {
-                val trailing = i > 0 && s[i - 1] != ' ' && prevAtomic && (i + 1 >= n || s[i + 1] == ' ' || s[i + 1] in ")]}")
-                if (trailing) { sb.append("^{+}"); i++ }
-                else { if (sb.isNotEmpty() && sb.last() != ' ') sb.append(' '); sb.append("+ "); i++ }
-                prevAtomic = false
-            }
-            // —— -：贴着物种且不接元素/数字=负电荷；否则原样（如单键 H-H）——
-            c == '-' -> {
-                val trailing = i > 0 && s[i - 1] != ' ' && prevAtomic && (i + 1 >= n || s[i + 1] == ' ' || s[i + 1] in ")]}")
-                if (trailing) { sb.append("^{-}"); i++ }
-                else { sb.append('-'); i++ }
-                prevAtomic = false
-            }
-            // 透传已有 LaTeX 命令（如 \Delta）
-            c == '\\' -> { val st = i; i++; while (i < n && s[i].isLetter()) i++; sb.append(s.substring(st, i)); prevAtomic = false }
-            else -> { sb.append(c); prevAtomic = c.isLetter() || c == ')' || c == ']' || c == '}'; i++ }
-        }
-    }
-    return sb.toString().trim()
-}
-
-// 扫描一段 LaTeX，把其中每个 \ce{...} 替换为转换后的纯 LaTeX；无 \ce 原样返回，异常则退回原串。
-private fun convertCeInLatex(latex: String): String {
-    if (!latex.contains("\\ce")) return latex
-    return try {
-        val n = latex.length; val sb = StringBuilder(); var i = 0
-        while (i < n) {
-            if (latex.startsWith("\\ce{", i)) {
-                val e = matchBrace(latex, i + 3)      // '{' 在 i+3
-                sb.append(mhchemBodyToLatex(if (e > i + 3) latex.substring(i + 4, e) else ""))
-                i = e + 1
-            } else { sb.append(latex[i]); i++ }
-        }
-        sb.toString()
-    } catch (_: Throwable) { latex }
 }
 
 // ============================================================
@@ -380,7 +247,6 @@ private data class MdCodeKey(val code: String, val lang: String, val kw: ULong, 
 
 private val mdBlocksCache = lruCache<String, List<MdBlock>>(96)
 private val mdInlineCache = lruCache<MdInlineKey, AnnotatedString>(192)
-private val mdParaCache = lruCache<MdInlineKey, Pair<AnnotatedString, List<String>>>(128)
 private val mdCodeCache = lruCache<MdCodeKey, AnnotatedString>(40)
 
 // ============================================================
@@ -469,14 +335,6 @@ private fun parseMarkdownCached(pre: String): List<MdBlock> =
 private fun inlineAnnotatedCached(s: String, base: Color, linkColor: Color, codeColor: Color): AnnotatedString =
     mdInlineCache.getOrPut(MdInlineKey(s, base.value, linkColor.value, codeColor.value)) {
         inlineAnnotated(s, base, linkColor, codeColor)
-    }
-
-/** 段落（可能含行内公式）缓存壳：连同按序收集的公式串一起缓存，占位 id 由文本决定、可复用。 */
-private fun paragraphAnnotatedCached(text: String, color: Color, linkColor: Color, codeColor: Color): Pair<AnnotatedString, List<String>> =
-    mdParaCache.getOrPut(MdInlineKey(text, color.value, linkColor.value, codeColor.value)) {
-        val maths = mutableListOf<String>()
-        val ann = inlineAnnotated(text, color, linkColor, codeColor, onMath = { latex -> maths.add(latex); "math_${maths.size - 1}" })
-        ann to maths.toList()
     }
 
 /** 代码语法高亮缓存壳。 */
@@ -684,9 +542,8 @@ private fun parseMarkdown(md: String): List<MdBlock> {
 private fun rememberInline(s: String, base: Color, linkColor: Color, codeColor: Color): AnnotatedString =
     remember(s, base, linkColor, codeColor) { inlineAnnotatedCached(s, base, linkColor, codeColor) }
 
-// 行内：**粗** *斜* `码` [文本](url)  裸链接  行内数学 $...$（经 onMath 注册为 InlineTextContent）
-// onMath!=null 时把 $...$ 交给回调登记并插入内联占位；为 null 时 $ 原样输出（老行为）。
-private fun inlineAnnotated(s: String, base: Color, linkColor: Color, codeColor: Color, onMath: ((String) -> String)? = null): AnnotatedString = buildAnnotatedString {
+// 行内：**粗** *斜* `码` [文本](url)  裸链接  行内数学 $...$（Apache-2.0 版不渲染公式，`$` 原样输出）
+private fun inlineAnnotated(s: String, base: Color, linkColor: Color, codeColor: Color): AnnotatedString = buildAnnotatedString {
     var i = 0
     val hlBg = linkColor.copy(alpha = 0.20f)  // #3 高亮底色，从主题色派生（不写死设计色）
     fun findClose(marker: String, from: Int): Int {
@@ -696,36 +553,21 @@ private fun inlineAnnotated(s: String, base: Color, linkColor: Color, codeColor:
     }
     while (i < s.length) {
         when {
-            // #4 行内数学 $...$：非 $$，两端不贴空格（排除 "$5 and $10" 货币误判），不跨行
-            s[i] == '$' && onMath != null && !s.startsWith("$$", i) -> {
-                val e = findClose("$", i + 1)
-                val latex = if (e > i + 1) s.substring(i + 1, e) else ""
-                if (e > i + 1 && s[i + 1] != ' ' && s[e - 1] != ' ' && !latex.contains('\n') && !latex.contains('$')) {
-                    appendInlineContent(onMath(latex), "[]")
-                    i = e + 1
-                } else { append(s[i]); i++ }
-            }
-            // 行内化学式 \ce{...}：登记为内联公式占位（与 $...$ 同一渲染路径），由 convertCeInLatex 转换
-            s.startsWith("\\ce{", i) && onMath != null -> {
-                val e = matchBrace(s, i + 3)
-                if (e > i + 3 && s[e] == '}') { appendInlineContent(onMath(s.substring(i, e + 1)), "[]"); i = e + 1 }
-                else { append(s[i]); i++ }
-            }
             s.startsWith("**", i) -> {
                 val e = findClose("**", i + 2)
-                if (e >= 0) { withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(inlineAnnotated(s.substring(i + 2, e), base, linkColor, codeColor, onMath)) }; i = e + 2 }
+                if (e >= 0) { withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(inlineAnnotated(s.substring(i + 2, e), base, linkColor, codeColor)) }; i = e + 2 }
                 else { append("**"); i += 2 }
             }
             // #5 删除线 ~~文本~~
             s.startsWith("~~", i) -> {
                 val e = findClose("~~", i + 2)
-                if (e >= 0) { withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) { append(inlineAnnotated(s.substring(i + 2, e), base, linkColor, codeColor, onMath)) }; i = e + 2 }
+                if (e >= 0) { withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) { append(inlineAnnotated(s.substring(i + 2, e), base, linkColor, codeColor)) }; i = e + 2 }
                 else { append("~~"); i += 2 }
             }
             // #3 高亮 ==文本==
             s.startsWith("==", i) -> {
                 val e = findClose("==", i + 2)
-                if (e >= 0) { withStyle(SpanStyle(background = hlBg)) { append(inlineAnnotated(s.substring(i + 2, e), base, linkColor, codeColor, onMath)) }; i = e + 2 }
+                if (e >= 0) { withStyle(SpanStyle(background = hlBg)) { append(inlineAnnotated(s.substring(i + 2, e), base, linkColor, codeColor)) }; i = e + 2 }
                 else { append("=="); i += 2 }
             }
             (s[i] == '*' || s[i] == '_') && i + 1 < s.length && s[i + 1] != ' ' -> {
@@ -897,11 +739,11 @@ fun MarkdownText(text: String, color: Color, fontSize: TextUnit = 13.sp, streami
                         }
                     }
                 }
-                // 关掉公式渲染时退回等宽源码：块级公式在正文里本来就是独立一块，
+                // 公式块：Apache-2.0 版不渲染 LaTeX（已移除 GPL 的 jlatexmath），
+                // 统一退回等宽源码——块级公式在正文里本来就是独立一块，
                 // 直接不画会让「$$…$$ 那段话」凭空消失，用户只会以为模型没答完。
                 is MdBlock.Math ->
-                    if (LocalChatDisplay.current.renderLatex) LatexView(b.latex, color, fontSize.value + 2f)
-                    else Text(b.latex, color = muted, fontSize = (fontSize.value - 1).sp, fontFamily = FontFamily.Monospace)
+                    Text(b.latex, color = muted, fontSize = (fontSize.value - 1).sp, fontFamily = FontFamily.Monospace)
                 // #6 脚注定义区：分割线 + 逐条「label. 说明」，小字弱色
                 is MdBlock.Footnotes -> Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     HorizontalDivider(color = gridColor)
@@ -1026,83 +868,18 @@ private fun ImageWebFallback(url: String, gridColor: Color) {
     }
 }
 
-// 段落渲染：支持行内数学 $...$。把每个公式登记为 InlineTextContent——用 JLaTeXMath 预建
-// drawable 量出其内在宽高，换算成相对字号的 em 尺寸作占位，子组件再把同一 drawable 铺满占位，
-// 从而让公式随文字排版/换行且尺寸对齐（不破坏 MarkdownText 其余块的普通渲染）。
+// 段落渲染：不渲染 LaTeX 公式（Apache-2.0 版移除了 GPL 的 jlatexmath 依赖），
+// 统一走「不认 $...$」的路径（onMath=null → `$` 原样输出），公式源码按普通文本显示。
 @Composable
 private fun MarkdownParagraph(text: String, color: Color, fontSize: TextUnit, linkColor: Color, codeColor: Color) {
-    val fontPx = with(LocalDensity.current) { fontSize.toPx() }
-    val colorInt = color.toArgb()
-    // 关掉公式渲染时改走**不认 $...$** 的那条老路径（onMath=null → `$` 原样输出），
-    // 而不是「照样解析再把公式画成文字」：后者会把 `$5 和 $10` 这类货币误判留在原地，
-    // 关了公式还被公式语法咬一口，那这个开关就白给了。
-    val renderLatex = LocalChatDisplay.current.renderLatex
-    // 构建带占位的 annotated + 收集公式；颜色/字号变化时重建
-    val (annotated, maths) = remember(text, color, linkColor, codeColor, renderLatex) {
-        if (renderLatex) paragraphAnnotatedCached(text, color, linkColor, codeColor)
-        else inlineAnnotatedCached(text, color, linkColor, codeColor) to emptyList<String>()
+    // 含链接的段落仍走 Text（保留 LinkAnnotation 点击）；纯文本段落走缓存布局 Canvas（免重复测字形）。
+    val annotated = remember(text, color, linkColor, codeColor) { inlineAnnotatedCached(text, color, linkColor, codeColor) }
+    val hasLinks = remember(annotated) { annotated.getLinkAnnotations(0, annotated.length).isNotEmpty() }
+    if (hasLinks) Text(annotated, color = color, fontSize = fontSize)
+    else {
+        val colorsKey = remember(color, linkColor, codeColor) { java.util.Objects.hash(color, linkColor, codeColor) }
+        CachedParagraph(text, colorsKey, annotated, color, fontSize)
     }
-    if (maths.isEmpty()) {
-        // 含链接的段落仍走 Text（保留 LinkAnnotation 点击）；纯文本段落走缓存布局 Canvas（免重复测字形）。
-        val hasLinks = remember(annotated) { annotated.getLinkAnnotations(0, annotated.length).isNotEmpty() }
-        if (hasLinks) Text(annotated, color = color, fontSize = fontSize)
-        else {
-            val colorsKey = remember(color, linkColor, codeColor) { java.util.Objects.hash(color, linkColor, codeColor) }
-            CachedParagraph(text, colorsKey, annotated, color, fontSize)
-        }
-        return
-    }
-    val inlineContent = remember(annotated, fontPx, colorInt) {
-        maths.mapIndexed { idx, latex ->
-            // 先把 \ce{...} 化学式转成纯 LaTeX（无 \ce 则原样），再交 JLaTeXMath
-            val prepared = convertCeInLatex(latex)
-            val drawable = try {
-                ru.noties.jlatexmath.JLatexMathDrawable.builder(prepared).textSize(fontPx * 1.05f).color(colorInt).build()
-            } catch (_: Throwable) { null }
-            val wEm = if (drawable != null && fontPx > 0) (drawable.intrinsicWidth / fontPx).coerceIn(0.5f, 30f) else (latex.length * 0.55f).coerceAtLeast(0.5f)
-            val hEm = if (drawable != null && fontPx > 0) (drawable.intrinsicHeight / fontPx).coerceIn(0.8f, 6f) else 1.3f
-            "math_$idx" to InlineTextContent(
-                Placeholder(width = wEm.em, height = hEm.em, placeholderVerticalAlign = PlaceholderVerticalAlign.Center)
-            ) {
-                if (drawable != null) {
-                    androidx.compose.ui.viewinterop.AndroidView(
-                        factory = { c -> android.widget.ImageView(c) },
-                        update = { it.setImageDrawable(drawable); it.adjustViewBounds = true },
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                } else {
-                    // 渲染失败 → 退回普通文本（原始源码），不崩不空白
-                    Text(latex, color = color, fontSize = fontSize, maxLines = 1)
-                }
-            }
-        }.toMap()
-    }
-    Text(annotated, color = color, fontSize = fontSize, inlineContent = inlineContent)
-}
-
-// 块级数学公式（$$...$$）用 JLaTeXMath 渲染成图像；失败则不显示（不崩溃）。
-@Composable
-private fun LatexView(latex: String, color: Color, sizeSp: Float) {
-    val ctx = LocalContext.current
-    val colorInt = color.toArgb()
-    // 先转换 \ce{...} 化学式（无 \ce 原样返回），再交 JLaTeXMath；失败则退回普通文本，不崩不空白
-    val drawable = remember(latex, colorInt, sizeSp) {
-        try {
-            ru.noties.jlatexmath.JLatexMathDrawable.builder(convertCeInLatex(latex))
-                .textSize(sizeSp * ctx.resources.displayMetrics.scaledDensity)
-                .color(colorInt)
-                .build()
-        } catch (_: Throwable) { null }
-    }
-    if (drawable == null) {
-        Text(latex, color = color, fontSize = (sizeSp - 2f).coerceAtLeast(11f).sp, fontFamily = FontFamily.Monospace)
-        return
-    }
-    androidx.compose.ui.viewinterop.AndroidView(
-        factory = { c -> android.widget.ImageView(c) },
-        update = { iv -> iv.setImageDrawable(drawable) },
-        modifier = Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 2.dp),
-    )
 }
 
 // ============================================================

@@ -159,7 +159,6 @@ dependencies {
     implementation(libs.coroutines.android)
     implementation(libs.coil.compose)
     implementation(libs.coil.gif)
-    implementation(libs.jlatexmath)
     // PDF 文本层提取（DocReadTool：含文本层的 PDF 直接抽字，跳过慢的逐页视觉OCR；扫描件才回退）
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     // Shizuku（ADB 级特权，无需 root）：用于把录音 appop 强制允许 → 后台持续持麦

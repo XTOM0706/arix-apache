@@ -38,8 +38,6 @@ itextg = "5.5.10"
 pdfbox = "2.0.27.0"
 zip4j = "2.11.5"
 coil = "2.5.0"
-jlatexmath = "0.2.0"
-renderx = "1.0.0"
 kotlinx-serialization = "1.6.0"
 uuid = "0.8.2"
 gson = "2.10.1"
@@ -162,10 +160,6 @@ zip4j = { group = "net.lingala.zip4j", name = "zip4j", version.ref = "zip4j" }
 coil = { group = "io.coil-kt", name = "coil", version.ref = "coil" }
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 coil-gif = { group = "io.coil-kt", name = "coil-gif", version.ref = "coil" }
-
-# LaTeX rendering
-jlatexmath = { group = "ru.noties", name = "jlatexmath-android", version.ref = "jlatexmath" }
-renderx = { group = "com.github.tech-pw", name = "RenderX", version.ref = "renderx" }
 
 # Serialization
 kotlinx-serialization = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
