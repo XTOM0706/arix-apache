@@ -489,6 +489,26 @@ private fun WelcomeStep(compact: Boolean) {
         color = scheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 16.sp,
         modifier = Modifier.stepIn(3),
     )
+    Spacer(Modifier.height(10.dp))
+    // Apache-2.0 精简版引导：完整功能在 GPL 满血版里，点开官方仓库。
+    XtomCard(modifier = Modifier.stepIn(3)) {
+        Text(tr("这是精简版"), color = scheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(4.dp))
+        Text(tr("本版移除了部分能力（超级岛/语音通话/角色扮演/记忆图谱/云端市场/终端等）。想要完整功能，请用 GPL 满血版。"), color = scheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 16.sp)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "https://github.com/XTOM0706/arix-app",
+            color = scheme.primary, fontSize = 11.sp,
+            modifier = Modifier.clickable {
+                runCatching {
+                    context.startActivity(
+                        android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/XTOM0706/arix-app"))
+                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
+            },
+        )
+    }
 }
 
 // ============================================================
@@ -1405,6 +1425,12 @@ private fun DoneStep(compact: Boolean) {
     Spacer(Modifier.height(12.dp))
     Text(
         tr("想重新走一遍：设置 → 新手向导。"),
+        color = scheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 16.sp,
+        modifier = Modifier.stepIn(2),
+    )
+    Spacer(Modifier.height(10.dp))
+    Text(
+        tr("本版是 Apache-2.0 精简版。想要完整功能（超级岛/语音通话/角色扮演/记忆图谱/云端市场/终端等），请改用 GPL 满血版：https://github.com/XTOM0706/arix-app"),
         color = scheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 16.sp,
         modifier = Modifier.stepIn(2),
     )
