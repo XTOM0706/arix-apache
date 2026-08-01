@@ -745,7 +745,7 @@ private suspend fun generateGreeting(cfg: CloudApiConfig?, sysPrompt: String?): 
 /** 唤醒助手本地 sherpa 识别：确保模型就绪→加载→识别→释放。返回 (文字, 错误)。
  *  模型已改为按需下载（不再随包携带），没下就诚实报错、引导去语音识别页下——
  *  绝不在唤醒这条路上偷偷拉 26MB。 */
-/** 本地 sherpa 识别。VoiceCall 也用，故非 private。 */
+/** 本地 sherpa 识别。 */
 internal suspend fun localSttTranscribe(context: android.content.Context, samples: FloatArray): Pair<String?, String?> =
     withContext(Dispatchers.IO) {
         try {

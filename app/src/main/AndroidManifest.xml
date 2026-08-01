@@ -238,29 +238,11 @@
             android:exported="false"
             android:foregroundServiceType="microphone|dataSync" />
 
-        <!-- 数字助手：设为默认助手后系统常驻，助手手势/唤醒命中拉起系统托管会话浮层 -->
-        <service
-            android:name=".XtomVoiceInteractionService"
-            android:exported="true"
-            android:permission="android.permission.BIND_VOICE_INTERACTION">
-            <intent-filter>
-                <action android:name="android.service.voice.VoiceInteractionService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.voice_interaction"
-                android:resource="@xml/interaction_service" />
-        </service>
-
-        <service
-            android:name=".XtomVoiceSessionService"
-            android:exported="true"
-            android:permission="android.permission.BIND_VOICE_INTERACTION" />
-
         <!-- ⚠ BIND_RECOGNITION_SERVICE 不能省：这个服务是 exported 的，没有它**设备上任何一个 App
              都能直接 bindService 进来**驱动我们的语音识别管线（等于借我们的麦克风与 STT 用）。
              系统语音识别框架本身就是按这个签名级权限来绑的，加上它只挡住"越过系统直接绑"的第三方。
-             对照：本清单里另外三个 exported 服务(VoiceInteraction/VoiceSession/AccessibilityService/
-             NotificationListener)都各自带了对应的 BIND_* 权限，只有这个漏了。 -->
+             对照：本清单里另外三个 exported 服务(AccessibilityService/NotificationListener)都各自带了
+             对应的 BIND_* 权限，只有这个漏了。 -->
         <service
             android:name=".XtomRecognitionService"
             android:exported="true"

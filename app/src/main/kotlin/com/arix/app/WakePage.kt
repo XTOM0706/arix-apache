@@ -258,9 +258,7 @@ import java.util.Locale
                     ensureNotifPermission()
                     WakeService.start(context)
                     isListening = true; wakeStatus = tr("监听中")
-                    report(tr("语音唤醒已开启（后台常驻），命中后走数字助手会话"))
-                    if (!XtomVoiceInteractionService.isActiveAssistant(context))
-                        addLog(tr("提示：把 Arix 设为默认助手，命中后由系统托管弹出会话（更稳、免悬浮窗权限）"))
+                    report(tr("语音唤醒已开启（后台常驻）"))
                 } catch (e: Exception) {
                     report(tr("开启失败: %s").format(e.message))
                 }

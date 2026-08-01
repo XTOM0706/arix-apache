@@ -256,13 +256,6 @@ class WakeService : Service() {
             scheduleRearm(1500)
             return
         }
-        // 首选：作为默认数字助手，拉起系统托管的会话浮层（无需悬浮窗权限、不受后台启动限制）
-        val vis = XtomVoiceInteractionService.instance
-        if (vis != null && XtomVoiceInteractionService.isActiveAssistant(this)) {
-            com.arix.wake.WakeLog.d("作为数字助手拉起会话（showSession）")
-            rearmHandler.post { vis.launchAssist() }
-            return
-        }
         // 锁屏(keyguard 锁定)时：悬浮窗 TYPE_APPLICATION_OVERLAY 越不过 keyguard——FLAG_SHOW_WHEN_LOCKED
         // 只对 Activity window 生效，keyguard 层级盖在应用悬浮窗之上，故浮层弹了也被锁屏挡住看不见。
         // 官方唯一可靠的越锁屏机制 = Activity(setShowWhenLocked/setTurnScreenOn) + 全屏 intent 通知拉起，

@@ -940,18 +940,12 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
     }
      var convTitle by remember { mutableStateOf("对话") }
      var editingTitle by remember { mutableStateOf(false) }
-     var voiceCallOn by remember { mutableStateOf(false) }   // 语音通话模式（长按麦克风进入）
      // 按住说话浮层（短按麦克风进入）：录一段→转写→**填进输入框**，不直接发。
      // 与通话是两件事：通话说完就发，这个给「发出去之前想看一眼」的场合。手势分配的理由见 HoldToTalk.kt。
      var pushToTalkOn by remember { mutableStateOf(false) }
-     // 离开聊天页就收掉（同 voiceCallOn：本页常驻 composition，不销毁就不会自己收，麦克风会一直被占着）
+     // 离开聊天页就收掉（本页常驻 composition，不销毁就不会自己收，麦克风会一直被占着）
      LaunchedEffect(visible) { if (!visible && pushToTalkOn) pushToTalkOn = false }
-     // 离开聊天页就挂断。语音通话浮层是**内联**的（不是 Dialog），聊天页常驻后它跟着常驻：
-     // 用户在通话中点开别的页面 → 浮层被盖住看不见、挂断键也点不到，可麦克风还在录、TTS 还在念，
-     // 整机音频路由卡在通话态（还原逻辑挂在浮层的 onDispose 上，不销毁就永远不跑）。
-     // 置 false 即让浮层离开 composition，它的 onDispose 会把麦克风/路由/TTS 一并收干净。
-     LaunchedEffect(visible) { if (!visible && voiceCallOn) voiceCallOn = false }
-     // 发送代次：每次自动发送 ++。语音通话据此判断「答案是我这轮的」——只看 isSending 的降沿不够，
+     // 发送代次：每次自动发送 ++。用于确认「这条答案是我这轮的」——只看 isSending 的降沿不够，
      // 发送失败/被 STOP 时压根没有新答案，会把上一轮的旧答案再念一遍。
      var sendGeneration by remember { mutableStateOf(0) }
  
@@ -1458,13 +1452,13 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
          }
      }
 
-     // Auto-send after edit / 语音通话转写后自动发送。
+     // Auto-send after edit / 语音转写后自动发送。
      //
      // ⚠ 不能写成 LaunchedEffect(pendingAutoSend)：effect 体内要把 pendingAutoSend 置回 false，
      // 那等于改自己的 key → 重组 → remember(key) 丢弃旧 LaunchedEffectImpl → **onForgotten 取消
      // 正在跑的协程**，而此时它已挂在网络请求上，于是发送必死（用户气泡加了、isSending 闪一下
-     // 就回落、永远没有回答）。此前没人设过 pendingAutoSend=true，这段是死代码所以没暴露；
-     // 语音通话一接上就踩雷。改成 snapshotFlow 观察，effect 的 key 恒定为 Unit，不会自我取消。
+     // 就回落、永远没有回答）。此前没人设过 pendingAutoSend=true，这段是死代码所以没暴露。
+     // 改成 snapshotFlow 观察，effect 的 key 恒定为 Unit，不会自我取消。
      LaunchedEffect(Unit) {
        snapshotFlow { pendingAutoSend }.collect { pending ->
          // 条件不满足也必须复位，否则 flag 永久锁死 true：下次再置 true 是同值写入(不触发)，
@@ -1473,7 +1467,7 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
          if (input.text.isBlank() || active == null || isSending) { pendingAutoSend = false; return@collect }
          run {
              pendingAutoSend = false
-              sendGeneration++   // 本轮发送的代次：语音通话据此确认「这条答案是我这轮的」，而不是上一轮的旧答案
+              sendGeneration++   // 本轮发送的代次：据此确认「这条答案是我这轮的」，而不是上一轮的旧答案
               // Trigger send via simulating the button click logic
              val cfg = active!!; val userText = input.text.trim()
              // 刚发了话，当然要看着它答：每次发送都重新跟随，别让上一轮翻历史的状态粘住
@@ -1789,11 +1783,9 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
      var autoReadJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
      // scope 是 MainScreen 的、活得比本页久 → 本页销毁必须自己收，否则退出聊天还在念。
      DisposableEffect(Unit) { onDispose { autoReadJob?.cancel(); runCatching { ttsTool.stopSpeaking() } } }
-     // 进语音通话 / 打开按住说话，立刻收声：
-     //  · 通话那条路自己会念答案，不掐掉就是同一句话两个声音叠着响（而且用的是同一个 TtsTool 实例）；
-     //  · 按住说话要开麦，喇叭还在响会被一起录进去。
-     LaunchedEffect(voiceCallOn, pushToTalkOn) {
-         if (voiceCallOn || pushToTalkOn) { autoReadJob?.cancel(); runCatching { ttsTool.stopSpeaking() } }
+     // 打开按住说话，立刻收声：要开麦，喇叭还在响会被一起录进去。
+     LaunchedEffect(pushToTalkOn) {
+         if (pushToTalkOn) { autoReadJob?.cancel(); runCatching { ttsTool.stopSpeaking() } }
      }
      LaunchedEffect(Unit) {
          snapshotFlow { isSending }.collect { sending ->
@@ -1823,7 +1815,7 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
              }
              // ⭐ 水位线必须**先**推进、再判开关：否则关着开关聊了半天，一打开就会把攒下的全补念一遍。
              autoReadMark = newest
-             if (!autoRead.enabled || fresh.isEmpty() || voiceCallOn || pushToTalkOn) return@collect
+             if (!autoRead.enabled || fresh.isEmpty() || pushToTalkOn) return@collect
              // waifu 模式会把一条回答拆成多个气泡，所以是「本轮新增的全部」而不是「最后一条」。
              val raw = fresh.joinToString("\n") { it.text }
              val text = if (autoRead.dialogueOnly) RoleplaySpeech.dialogueOnly(raw) else raw
@@ -2359,14 +2351,11 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
              onSend = { performSend() },
              onStop = { haptics.reject(); sendJob?.cancel(); messageQueue.clear() },
              onQueue = { val t = input.text.trim(); if (t.isNotBlank()) { messageQueue.add(t); input.text = "" } },
-             // 麦克风：**短按 = 按住说话**（录一段→转写→填进输入框，先改再发），**长按 = 语音通话**（原样保留）。
-             // 曾经两个都是通话，理由是「通话是按住说话的超集」——那只在「说完就想发」时成立。
-             // 说完想先看一眼再发是另一半需求，通话给不了这个机会（它转写完直接触发发送）。
-             // 为什么按住说话是"短按打开一个浮层"而不是直接按在这颗图标上：长按在手指还没抬起时就触发，
-             // 跟"按下即开录"必然打架（每次进通话都会先偷录一段）；且 40dp 触点做不了上滑取消。
+             // 麦克风：短按 = 按住说话（录一段→转写→填进输入框，先改再发）。
+             // 为什么是"短按打开一个浮层"而不是直接按在这颗图标上：长按在手指还没抬起时就触发，
+             // 跟"按下即开录"必然打架；且 40dp 触点做不了上滑取消。
              // 完整取舍见 HoldToTalk.kt 的文件头。
              onVoice = { pushToTalkOn = true },
-             onVoiceLong = { voiceCallOn = true },
              onCamera = { onCamera { picked -> attachments.addAll(picked) } },
              onPickImage = { onPickImage { picked -> attachments.addAll(picked) } },
              onPickFile = { onPickFile { picked -> attachments.addAll(picked) } },
@@ -2515,26 +2504,6 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
      }
 
 
-     // 语音通话：连续多轮，VAD 自动断句、可插话打断。转写完只填输入框 + 触发 pendingAutoSend，
-     // 完全走既有发送链路 → 通话产生的就是正常消息(入库/有记忆/能翻历史)，不是临时会话。
-     if (voiceCallOn) {
-         VoiceCallOverlay(
-             context = context,
-             tts = ttsTool,          // 复用本页的实例，别再 new 一个：两个 TtsTool = 两份 sherpa 模型常驻 + 两个声音同时响还停不掉
-             isSending = isSending,
-             onTranscript = { text -> input.text = text; pendingAutoSend = true },
-             // waifu 模式会把一条回答拆成多个气泡，取「最后一条」只会念到最后半句 →
-             // 把本轮新增的 assistant 气泡全拼起来。marker 是发送前的最后一条 assistant 的 id。
-             answerSince = { marker ->
-                 val from = if (marker == null) 0 else chatBubbles.indexOfLast { it.id == marker } + 1
-                 chatBubbles.drop(from).filter { it.role == "assistant" }
-                     .joinToString("\n") { it.text }.trim().ifBlank { null }
-             },
-             lastAssistantId = { chatBubbles.lastOrNull { it.role == "assistant" }?.id },
-             onHangUp = { voiceCallOn = false },
-         )
-     }
-
      // 按住说话：只填输入框、**不**置 pendingAutoSend —— 与通话的区别就在这一行。
      // fill 而非直接赋 text：连带把光标顶到末尾并聚焦输入框，用户可以立刻接着改。
      if (pushToTalkOn) {
@@ -2673,7 +2642,6 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
      onStop: () -> Unit,
      onQueue: () -> Unit = {},
      onVoice: () -> Unit,
-     onVoiceLong: () -> Unit,
      onCamera: () -> Unit,
      onPickImage: () -> Unit,
      onPickFile: () -> Unit,
@@ -2873,7 +2841,7 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
                         } else Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = tr("发送"), modifier = Modifier.size(18.dp))
                     }
                  } else {
-                     Box(modifier = Modifier.size(40.dp).combinedClickable(onClick = onVoice, onLongClick = onVoiceLong), contentAlignment = Alignment.Center) {
+                     Box(modifier = Modifier.size(40.dp).combinedClickable(onClick = onVoice), contentAlignment = Alignment.Center) {
                          Icon(Icons.Outlined.Mic, contentDescription = tr("语音输入"), tint = scheme.primary, modifier = Modifier.size(22.dp))
                      }
                  }
