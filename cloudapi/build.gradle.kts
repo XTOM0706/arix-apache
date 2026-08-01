@@ -43,6 +43,6 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.okhttp.sse)
     // 不要加 org.json:json —— JSON License 带 "shall be used for Good, not Evil" 附加限制，
-    // 与 AGPL-3.0 不兼容；且 org.json 在 Android 上是平台自带 API，这条依赖本就多余。
+    // 与 Apache-2.0 不兼容；且 org.json 在 Android 上是平台自带 API，这条依赖本就多余。
     implementation(libs.coroutines.android)
 }

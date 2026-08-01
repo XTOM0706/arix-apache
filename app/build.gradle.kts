@@ -50,7 +50,7 @@ android {
         applicationId = "com.arix.app"
         minSdk = 26
         // targetSdk 钉在 28：让 App 落在旧 SELinux 域(untrusted_app_28)，保留「execve 自己数据目录里的二进制」权限，
-        // 从而能在进程内跑 proot + 完整 Ubuntu（Operit/Termux/ZeroTermux 同款做法）。代价仅是上不了 Google Play——本项目侧载分发，无所谓。
+        // 便于运行本机工具链。代价仅是上不了 Google Play——本项目侧载分发，无所谓。
         // compileSdk 仍 36：照常编译新 API；只是运行时行为按 28（多为「解除限制」，利好本工具型 App）。
         targetSdk = 28
         // ⚠️ versionName 必须与 release 的 tag 用**同一套数字方案**（tag 写 v0.1.0）。
@@ -169,7 +169,7 @@ dependencies {
     testImplementation(libs.coroutines.test)
     // JVM 单测里的 org.json 实现：AGP 那份 mockable android.jar 里 org.json 全是抛异常的桩，
     // 测 ToolArgValidator/MemEdges 这些吃 JSONObject 的东西必须有真实现。
-    // 用 AOSP 那份(Apache-2.0)，**不是** org.json 官方包——后者的 "Good, not Evil" 条款与 AGPL-3.0 不兼容。
+    // 用 AOSP 那份(Apache-2.0)，**不是** org.json 官方包——后者的 "Good, not Evil" 条款非 OSI 认证、与 Apache-2.0 不兼容。
     // 仅测试期生效，不进 APK。
     testImplementation("com.vaadin.external.google:android-json:0.0.20131108.vaadin1")
 }

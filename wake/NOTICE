@@ -4,27 +4,17 @@ Copyright 2025-2026 Arix
 This product includes software developed as part of the Arix project.
 
 The Arix wake module is original work, independently rewritten from scratch, and
-is licensed under the GNU Affero General Public License v3.0 only (see the LICENSE
-file in this directory). The current sources carry no third-party GPL/LGPL code.
+is licensed under the Apache License 2.0 (see the LICENSE file in this directory).
+The current sources carry no third-party GPL/LGPL code.
 
 An earlier iteration of this module did contain four files derived from Operit
 (LGPL-3.0-or-later). Those files were deleted outright, and the module was rebuilt
 around a different architecture -- a VAD/MFCC front end feeding a switchable
 decision stage (fixed-phrase KWS, or embedding-prototype matching for user-recorded
-phrases), rather than the original MFCC+DTW listener. See DESIGN-WAKE.md.
+phrases), rather than the original MFCC+DTW listener.
 
-This is an independent rewrite, not a "clean-room" reimplementation in the strict
-sense of the term: the rewrite was done by the same author who had previously worked
-on the derived files, not by a separate team walled off from the original. The
-distinction is worth stating plainly, because it costs nothing to admit -- Operit is
-LGPL-3.0-**or-later**, which can be taken under GPL-3.0 and is therefore compatible
-with this project's AGPL-3.0 anyway.
-
-Note on the licence change: this module was previously Apache-2.0. The rewrite was
-done to make Arix an independent project -- referencing others' ideas rather than
-carrying their code -- not in order to adopt a permissive licence. That goal is
-unaffected by the project moving to AGPL-3.0, so the provenance statement above
-stands unchanged.
+This is an independent rewrite, referencing others' ideas rather than carrying
+their code.
 
 ================================================================================
 Third-party components

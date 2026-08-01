@@ -39,6 +39,6 @@ dependencies {
     // 单测要真跑 JSON，而 compileOnly 不会进测试运行时类路径（testImplementation 只继承 implementation），
     // 所以这里再给测试期补一份实现。
     // ⚠ 用 AOSP 那份(Apache-2.0)，**不是** org.json 官方包 org.json:json —— 后者的 JSON License 带
-    //   "shall be used for Good, not Evil" 附加限制，与本项目的 AGPL-3.0 不兼容（cloudapi 的注释里已拒过一次）。
+    //   "shall be used for Good, not Evil" 附加限制，与 Apache-2.0 不兼容（cloudapi 的注释里已拒过一次）。
     testImplementation("com.vaadin.external.google:android-json:0.0.20131108.vaadin1")
 }

@@ -74,7 +74,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     // 不要加 org.json:json —— 它的 JSON License 带 "shall be used for Good, not Evil" 附加限制，
-    // 非 OSI 认证、与 AGPL-3.0 不兼容（Debian/Fedora/Google 都封）。而且在 Android 上纯属多余：
+    // 非 OSI 认证、与 Apache-2.0 不兼容（Debian/Fedora/Google 都封）。而且在 Android 上纯属多余：
     // org.json 是平台自带 API，编译期由 android.jar 提供，删掉这条依赖代码一个字都不用改。
     implementation(libs.kotlinx.serialization)
 
