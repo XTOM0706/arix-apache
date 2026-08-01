@@ -42,10 +42,7 @@ class LocalSearchTool(private val context: Context) : Tool {
         "chats" to "对话",
         "memory" to "记忆",
         "files" to "工作区文件",
-        "diary" to "日记",
         "reminders" to "提醒",
-        "cards" to "角色卡",
-        "worldbook" to "世界书",
         "packages" to "功能包",
     )
 
@@ -92,10 +89,7 @@ class LocalSearchTool(private val context: Context) : Tool {
                     "chats" -> searchChats(q, limit)
                     "memory" -> searchMemory(q, limit)
                     "files" -> searchFiles(q, limit)
-                    "diary" -> searchDiary(q, limit)
                     "reminders" -> searchReminders(q, limit)
-                    "cards" -> searchCards(q, limit)
-                    "worldbook" -> searchWorldBook(q, limit)
                     "packages" -> searchPackages(q, limit)
                     else -> null
                 }
@@ -140,16 +134,14 @@ class LocalSearchTool(private val context: Context) : Tool {
     private suspend fun sourceForbidden(scope: String): Boolean {
         val toolName = when (scope) {
             "memory" -> "memory"
-            "diary" -> "diary"
             "reminders" -> "set_reminder"
-            "worldbook" -> "worldbook"
             "files" -> "file_read"
             else -> null
         } ?: return false
         // FORBID 是硬禁令（ASK 不在这里挡，见调用处说明）
         if (ToolPermissionManager.effectiveFor(currentToolCaller(), toolName,
                 AndroidPermissionLevel.STANDARD) == ToolPermission.FORBID) return true
-        val pkg = when (scope) { "memory" -> "memory"; "diary" -> "diary"; "worldbook" -> "worldbook"; "files" -> "file_tools"; else -> null }
+        val pkg = when (scope) { "memory" -> "memory"; "files" -> "file_tools"; else -> null }
         return pkg != null && !PackageManager.isEnabled(pkg)
     }
 
@@ -282,13 +274,7 @@ class LocalSearchTool(private val context: Context) : Tool {
         return line.trim().take(160)
     }
 
-    // ── 日记 / 提醒 / 角色卡 / 世界书 / 功能包：这些源此前完全没有搜索能力 ──────────────
-    private fun searchDiary(q: String, limit: Int): String? {
-        val hits = FuzzyMatch.rankBy(q, com.arix.app.DiaryStore.all(context), limit) { listOf(it.date, it.text) }
-        if (hits.isEmpty()) return null
-        return hits.joinToString("\n") { "· ${it.item.date}：${snippet(it.item.text, q)}" }
-    }
-
+    // ── 提醒 / 功能包 ─────────────────────────────────────────────────────────────
     private fun searchReminders(q: String, limit: Int): String? {
         val hits = FuzzyMatch.rankBy(q, com.arix.app.ReminderStore.all(context), limit) { listOf(it.title, it.note) }
         if (hits.isEmpty()) return null
@@ -297,33 +283,6 @@ class LocalSearchTool(private val context: Context) : Tool {
             val rep = if (r.repeat != "none") "（${r.repeat} 重复）" else ""
             "· ${r.title}$rep ${fmtTime(r.atMillis)}" + (if (r.note.isNotBlank()) " — ${snippet(r.note, q)}" else "")
         }
-    }
-
-    private suspend fun searchCards(q: String, limit: Int): String? {
-        val cards = com.arix.data.db.AppDatabase.getInstance(context).characterCardDao().getAll().first()
-        val hits = FuzzyMatch.rankBy(q, cards, limit) {
-            listOf(it.name, it.description, it.characterSetting, it.worldBook, it.openingStatement)
-        }
-        if (hits.isEmpty()) return null
-        return hits.joinToString("\n") { s ->
-            val c = s.item
-            val where = listOf(
-                "人设" to c.characterSetting, "简介" to c.description,
-                "世界书" to c.worldBook, "开场白" to c.openingStatement,
-            ).firstOrNull { FuzzyMatch.score(q, it.second) > 0f }
-            "· ${c.name}" + (where?.let { "（命中${it.first}）— ${snippet(it.second, q)}" } ?: "")
-        }
-    }
-
-    private fun searchWorldBook(q: String, limit: Int): String? {
-        val obj = runCatching {
-            val f = File(context.filesDir, "worldbook.json")
-            if (f.exists()) JSONObject(f.readText()) else JSONObject()
-        }.getOrDefault(JSONObject())
-        val entries = obj.keys().asSequence().map { it to obj.optString(it) }.toList()
-        val hits = FuzzyMatch.rankBy(q, entries, limit) { listOf(it.first, it.second) }
-        if (hits.isEmpty()) return null
-        return hits.joinToString("\n") { "· ${it.item.first}：${snippet(it.item.second, q)}" }
     }
 
     private fun searchPackages(q: String, limit: Int): String? {

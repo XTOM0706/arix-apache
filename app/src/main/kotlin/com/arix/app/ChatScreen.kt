@@ -1279,7 +1279,7 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
      // 两道闸都要过：**陪伴包总闸**（情绪状态卡是陪伴能力，没装陪伴包就不该冒出来——
      // waifu/日记/主动消息都查了这道闸，只有这里漏了）+ 状态卡自己的开关。
      LaunchedEffect(convId, boundCardId) {
-         moodBadge = if (CompanionPrefs.enabled(context) && InteractionState.isEnabled(context)) {
+         moodBadge = if (InteractionState.isEnabled(context)) {
              val s = InteractionState.snapshot(context, boundCardId, convId)
              s.optString("closing_mood").ifBlank { s.optString("energy") }.ifBlank { null }
          } else null
@@ -1504,7 +1504,7 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
                      val card = convId?.let { configManager.conversationManager.repo.cardIdOf(it)?.let { cardManager.getById(it) } }   // 只要卡 id：别为它把整份会话(messagesJson 可达 MB 级)拼回来
                      // 拆气泡（陪伴卡按句 / 设置开关按行）。与 performSend 里那段是同一套判定，见那边的注释。
                      val splitMode = when {
-                         card?.waifuEnabled == true && CompanionPrefs.enabled(context) -> ReplySplitter.Mode.SENTENCE
+                         card?.waifuEnabled == true -> ReplySplitter.Mode.SENTENCE
                          behavior.splitReplyByLine -> ReplySplitter.Mode.LINE
                          else -> null
                      }
@@ -1668,7 +1668,7 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
                      // 卡上开了 waifu 就以卡为准：那是这张卡的人设的一部分，不该被一个全局开关改掉说话方式。
                      // ⚠ 纯渲染：下面 conversationMsgs.add 落的仍是**完整的一条** content，历史与上下文不受影响。
                      val splitMode = when {
-                         card?.waifuEnabled == true && CompanionPrefs.enabled(context) -> ReplySplitter.Mode.SENTENCE
+                         card?.waifuEnabled == true -> ReplySplitter.Mode.SENTENCE
                          behavior.splitReplyByLine -> ReplySplitter.Mode.LINE
                          else -> null
                      }

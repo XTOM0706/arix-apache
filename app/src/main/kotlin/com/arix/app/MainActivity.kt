@@ -305,18 +305,13 @@ import androidx.compose.ui.unit.IntOffset
          // 分享/划词的冷启动这一路（热启动那一路在 onNewIntent）。ShareIntake 自己挡重放：
          // 从「最近任务」点回来时系统会把原来那条分享 Intent 再发一遍，不挡就会重复灌一次内容。
          if (ShareIntake.handle(this, intent) || ShareIntake.isRouteToChat(intent)) shareTrigger.value++
-         // 主动消息 / 每日日记：陪伴包总闸开 + 各自开启时才排周期任务（onCreate 幂等）。
-         // WorkManager.getInstance 首次调用会同步初始化 WorkManager 自带的 Room DB + 磁盘 IO——
+         // WorkManager 调度类初始化会同步初始化 Room DB + 磁盘 IO——
          // 挪到后台线程，别卡在冷启动 onCreate 的首帧路径上（调度不依赖首帧，晚一拍无碍）。
          val act = this
          Thread {
-             if (CompanionPrefs.enabled(act)) {
-                 if (ProactivePrefs.enabled(act)) ProactiveScheduler.schedule(act)
-                 if (DiaryPrefs.enabled(act)) DiaryScheduler.schedule(act, replace = false)  // KEEP：别打断到点正在生成的日记
-             } else { ProactiveScheduler.cancel(act); DiaryScheduler.cancel(act) }   // 关了总闸就撤掉已排的
-              // 桌面图标长按的快捷方式（新对话 / 语音）。幂等，每次冷启动刷一遍，跟随语言设置变化。
-              // 要绘位图，更不该待在首帧路径上，搭这趟后台车。
-              XtomShortcuts.publish(act)
+             // 桌面图标长按的快捷方式（新对话 / 语音）。幂等，每次冷启动刷一遍，跟随语言设置变化。
+             // 要绘位图，更不该待在首帧路径上，搭这趟后台车。
+             XtomShortcuts.publish(act)
               // 打开就查更新：后台 Worker 异步查，不卡首帧；同版本只提醒一次。开关关着就不查。
               UpdateNotifier.checkNow(act)
           }.apply { isDaemon = true }.start()
@@ -539,7 +534,6 @@ import androidx.compose.ui.unit.IntOffset
              nav("personalization", Icons.Outlined.Palette, "个性化", "个性化"),
              nav("config", Icons.Outlined.Settings, "模型配置", "对话与模型"),
              nav("dialog_settings", Icons.Outlined.Style, "对话设置", "对话与模型"),
-             nav("companion_settings", Icons.Outlined.Style, "陪伴设置", "对话与模型"),
              nav("voice_clone", Icons.Outlined.RecordVoiceOver, "声音克隆", "对话与模型"),
              nav("user_scripts", Icons.Outlined.Code, "用户脚本", "对话与模型"),
              nav("search_settings", Icons.Outlined.Public, "联网搜索", "对话与模型"),
@@ -1051,7 +1045,6 @@ import androidx.compose.ui.unit.IntOffset
                      "settings" -> AppSettingsPage(context = context)
                      "personalization" -> PersonalizationPage(context = context)
                      "dialog_settings" -> DialogSettingsPage(context = context)
-                     "companion_settings" -> CompanionSettingsPage(context = context)
                      "tool_keys" -> ToolKeysPage(context = context)
                      "search_settings" -> SearchSettingsPage(context = context)
                      "user_scripts" -> UserScriptPage(context = context)
@@ -1393,7 +1386,6 @@ import androidx.compose.ui.unit.IntOffset
              tr("对话与模型") to listOf(
                  SettingsRow(Icons.Outlined.Settings, tr("模型配置"), "config", tr("按用途配模型：对话/推理/视觉/标题，以及语音朗读(TTS)、语音识别(STT)。每个用途各选一个模型，含 API 地址/密钥/温度等参数。")),
                  SettingsRow(Icons.Outlined.Style, tr("对话设置（压缩 / 自动记忆 / 快捷短语）"), "dialog_settings", tr("长对话上下文压缩、AI 直接执行设备操作、对话后自动抽取记忆、快捷短语增删。")),
-                 SettingsRow(Icons.Outlined.Style, tr("陪伴设置（状态层 / 感知 / 陪伴包）"), "companion_settings", tr("交互状态层，健康/天气/通知感知，陪伴包与主动消息/每日日记。")),
                 SettingsRow(Icons.Outlined.RecordVoiceOver, tr("声音克隆"), "voice_clone", tr("录一段/选一段人声，调 Minimax 或硅基流动克隆 API 生成专属音色，克隆完可直接用于朗读。")),
                 SettingsRow(Icons.Outlined.Code, tr("用户脚本（油猴式）"), "user_scripts", tr("给指定网址配 JS 脚本，open_page 打开匹配网址时自动注入执行（去广告/展开正文/破懒加载等）。")),
                  SettingsRow(Icons.Outlined.Public, tr("联网搜索（引擎 / 深度研究）"), "search_settings", tr("配置联网搜索：14 键控引擎(Tavily/Brave/…)、AnySearch、Perplexica，以及深度研究(deep_search)的研究模型与轮数。普通搜索默认必应+百度免配置；这里是可选增强，默认全关，开启并填 key 才用。")),
@@ -1485,7 +1477,7 @@ import androidx.compose.ui.unit.IntOffset
      "config" -> tr("模型配置"); "stt" -> tr("语音识别"); "tts" -> tr("语音朗读"); "voice_clone" -> tr("声音克隆"); "conversations" -> tr("对话管理"); "cards" -> tr("角色卡")
      "memory" -> tr("记忆管理"); "packages" -> tr("本地包"); "operit" -> tr("云端市场"); "wake" -> tr("语音唤醒")
      "permissions" -> tr("权限管理"); "plugins" -> tr("插件制作"); "import" -> tr("导入导出"); "terminal" -> tr("终端")
-     "monitor" -> tr("监控 & 风控"); "activity_center" -> tr("AI 活动中心"); "crash" -> tr("崩溃报告"); "settings" -> tr("应用设置"); "personalization" -> tr("个性化"); "dialog_settings" -> tr("对话设置"); "companion_settings" -> tr("陪伴设置"); "tool_keys" -> tr("工具密钥"); "search_settings" -> tr("联网搜索"); "settings_hub" -> tr("设置"); "about" -> tr("关于软件"); "favorites" -> tr("收藏"); "files" -> tr("文件"); "file_history" -> tr("文件改动历史"); "chat_appearance" -> tr("聊天外观"); "projects" -> tr("项目"); "usage" -> tr("使用统计"); "user_scripts" -> tr("用户脚本")
+     "monitor" -> tr("监控 & 风控"); "activity_center" -> tr("AI 活动中心"); "crash" -> tr("崩溃报告"); "settings" -> tr("应用设置"); "personalization" -> tr("个性化"); "dialog_settings" -> tr("对话设置"); "tool_keys" -> tr("工具密钥"); "search_settings" -> tr("联网搜索"); "settings_hub" -> tr("设置"); "about" -> tr("关于软件"); "favorites" -> tr("收藏"); "files" -> tr("文件"); "file_history" -> tr("文件改动历史"); "chat_appearance" -> tr("聊天外观"); "projects" -> tr("项目"); "usage" -> tr("使用统计"); "user_scripts" -> tr("用户脚本")
      "proxy" -> tr("网络代理"); "storage" -> tr("存储占用"); "app_log" -> tr("运行日志"); "update" -> tr("检查更新")
      else -> "Arix"
  }
@@ -1704,11 +1696,11 @@ import androidx.compose.ui.unit.IntOffset
      // 面板分组
      tr("常用"), tr("个性化"), tr("对话与模型"), tr("语音"), tr("工具与扩展"), tr("系统"),
      // 入口短名
-     tr("角色卡"), tr("文件"), tr("世界书"), tr("记忆"), tr("浏览器"), tr("聊天"), tr("设置"),
-     tr("模型配置"), tr("对话设置"), tr("陪伴设置"), tr("声音克隆"), tr("用户脚本"), tr("联网搜索"),
-     tr("站点登录"), tr("对话管理"), tr("收藏"), tr("使用统计"), tr("工作流"), tr("导入导出"),
+     tr("文件"), tr("记忆"), tr("聊天"), tr("设置"),
+     tr("模型配置"), tr("对话设置"), tr("声音克隆"), tr("用户脚本"), tr("联网搜索"),
+     tr("对话管理"), tr("收藏"), tr("使用统计"), tr("导入导出"),
      tr("语音唤醒"), tr("项目"), tr("工具密钥"), tr("本地包"), tr("改动历史"), tr("聊天外观"),
-     tr("云端市场"), tr("插件制作"), tr("终端"), tr("权限管理"), tr("活动中心"), tr("崩溃报告"),
+     tr("云端市场"), tr("插件制作"), tr("权限管理"), tr("活动中心"), tr("崩溃报告"),
      tr("新手向导"), tr("关于"),
      // 抽屉里对话列表的时间分组
      tr("今天"), tr("昨天"), tr("近7天"), tr("更早"),

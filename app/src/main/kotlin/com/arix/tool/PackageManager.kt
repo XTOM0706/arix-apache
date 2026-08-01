@@ -95,8 +95,6 @@ fun createBuiltInPackages(context: Context): List<PackageDef> = listOf(
     // 现场测量：主动触发手表传感器测心率/血氧（区别于 device_status/健康注入读历史）。默认关：会真的启动设备传感器、且需 tracker 侧开关。
     PackageDef("health_measure", "现场健康测量", "让手表/手环当场测一次心率或血氧(现场启动传感器，不是读历史)。需装「better health tracker」并在其里开「传感器 API」、且正佩戴设备。", "陪伴",
         listOf(HealthMeasureTool(context)), enabledByDefault = false),
-    PackageDef("diary", "每日日记", "AI 以自己的口吻写/念每日小结（write/read/list）；配合设置里的定时自动生成。", "陪伴",
-        listOf(DiaryTool(context)), enabledByDefault = true),
     PackageDef("media", "媒体控制", "控制当前在放的音乐：播放/暂停/切歌/停 + 媒体音量；song_profile 读一首歌的曲目信息+歌词让 AI 能就歌聊。免特殊权限。", "设备控制",
         listOf(MusicControlTool(context), SongProfileTool()), enabledByDefault = false),
     // id 保持 notif_aware 不动：它是 SharedPreferences 的 key(pkg_$id)，改了用户已开启的包会退回默认状态。

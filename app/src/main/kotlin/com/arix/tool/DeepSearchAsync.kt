@@ -52,8 +52,6 @@ object DeepSearchAsync {
             if (android.os.Build.VERSION.SDK_INT >= 26 && nm.getNotificationChannel(CHANNEL) == null) {
                 nm.createNotificationChannel(android.app.NotificationChannel(CHANNEL, "深度研究", android.app.NotificationManager.IMPORTANCE_DEFAULT).apply { description = "后台深度研究完成通知" })
             }
-            val card = cardId?.let { runCatching { com.arix.app.CharacterCardManager(ctx).getById(it) }.getOrNull() }
-            val avatar = com.arix.app.loadAvatarBitmap(ctx, card?.avatarPath)
             val open = android.content.Intent(ctx, com.arix.app.MainActivity::class.java).apply {
                 flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP
                 putExtra(com.arix.app.MainActivity.EXTRA_OPEN_CONV, convId)
@@ -62,11 +60,10 @@ object DeepSearchAsync {
                 android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
             val n = androidx.core.app.NotificationCompat.Builder(ctx, CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_menu_search)
-                .setContentTitle(card?.name?.ifBlank { null } ?: "深度研究完成")
+                .setContentTitle("深度研究完成")
                 .setContentText("「$query」的研究报告好了")
                 .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(report.take(400)))
                 .setAutoCancel(true).setContentIntent(pi)
-                .apply { if (avatar != null) setLargeIcon(avatar) }
                 .build()
             nm.notify(44000 + convId.toInt(), n)
         } catch (_: Exception) {}
