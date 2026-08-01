@@ -232,13 +232,7 @@ class CloudApiClient(private val config: CloudApiConfig) {
                 messages.filter { it.role == "system" }.map { it.content }
             ).filter { it.isNotBlank() }.joinToString("\n\n")
 
-        val bodyJson = when (protocol) {
-            ChatProtocol.OPENAI -> buildOpenAiBody()
-            ChatProtocol.ANTHROPIC ->
-                AnthropicProtocol.buildBody(messages, mergedSystem, config, enableThinking, images, tools)
-            ChatProtocol.GEMINI ->
-                GeminiProtocol.buildBody(messages, mergedSystem, config, enableThinking, images, tools)
-        }
+        val bodyJson = buildOpenAiBody()
 
         val requestBody = bodyJson.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
 
@@ -248,18 +242,14 @@ class CloudApiClient(private val config: CloudApiConfig) {
         //  · 已含版本段（/v1 /v4 /v1beta.../openai/compatible-mode/v1 等）→ 只补 /chat/completions
         //  · 否则按 OpenAI 惯例补 /v1/chat/completions（保持对旧配置的向后兼容）
         val trimmed = config.baseUrl.trim()
-        val url = when (protocol) {
-            ChatProtocol.ANTHROPIC -> AnthropicProtocol.url(config.baseUrl)
-            ChatProtocol.GEMINI -> GeminiProtocol.url(config.baseUrl, config.model)
-            ChatProtocol.OPENAI -> when {
-                trimmed.endsWith("#") -> trimmed.dropLast(1)
-                else -> {
-                    val base = trimmed.trimEnd('/')
-                    when {
-                        base.endsWith("/chat/completions") -> base
-                        Regex("/(v\\d+[a-z]*|openai)$").containsMatchIn(base) -> "$base/chat/completions"
-                        else -> "$base/v1/chat/completions"
-                    }
+        val url = when {
+            trimmed.endsWith("#") -> trimmed.dropLast(1)
+            else -> {
+                val base = trimmed.trimEnd('/')
+                when {
+                    base.endsWith("/chat/completions") -> base
+                    Regex("/(v\\d+[a-z]*|openai)$").containsMatchIn(base) -> "$base/chat/completions"
+                    else -> "$base/v1/chat/completions"
                 }
             }
         }
@@ -271,13 +261,8 @@ class CloudApiClient(private val config: CloudApiConfig) {
             .url(url)
             .post(requestBody)
             .apply {
-                // 认证头按协议分家。Anthropic 认 `x-api-key`、Gemini 认 `x-goog-api-key`，
-                // 都**不认** `Authorization: Bearer`（发错的表现是 401）。无 Key 则一个都不发。
-                when (protocol) {
-                    ChatProtocol.OPENAI -> if (usedKey.isNotBlank()) header("Authorization", "Bearer $usedKey")
-                    ChatProtocol.ANTHROPIC -> AnthropicProtocol.headers(usedKey).forEach { (k, v) -> header(k, v) }
-                    ChatProtocol.GEMINI -> GeminiProtocol.headers(usedKey).forEach { (k, v) -> header(k, v) }
-                }
+                // OpenAI 兼容端点认 `Authorization: Bearer`。无 Key 则一个都不发。
+                if (usedKey.isNotBlank()) header("Authorization", "Bearer $usedKey")
             }
             .header("Content-Type", "application/json; charset=utf-8")
             .apply {
@@ -359,12 +344,6 @@ class CloudApiClient(private val config: CloudApiConfig) {
             var finishReason: String? = null
             // 消息级私有透传字段的累积器：SSE 会把同一个思考块切成多片，边收边按块 index 归并
             val extraAcc = mutableMapOf<String, Any>()
-            // 原生协议的跨片累积器（OpenAI 那条路上这两个一直是空的，不占事）：
-            //  · Anthropic：思考正文与它的签名分在不同事件里到，必须攒齐才拼得出可回传的块
-            //  · Gemini：functionCall 是一次给全的，得有个发号器保证序号唯一，否则两次调用的
-            //    arguments 会被上层按"同序号拼接"的规则粘成一坨烂 JSON
-            val anthropicThinking = mutableMapOf<Int, AnthropicProtocol.ThinkingBlock>()
-            val geminiIndexer = GeminiProtocol.ToolIndexer()
 
             try {
                 var line: String? = reader.readLine()
@@ -375,7 +354,7 @@ class CloudApiClient(private val config: CloudApiConfig) {
                                 val data = currentData.toString().trim()
                                 currentData = StringBuilder()
                                 if (data != "[DONE]") {
-                                    val d = parseDelta(data, anthropicThinking, geminiIndexer)
+                                    val d = parseDelta(data)
                                     val (reasoning, content, u, toolDeltas, fr) = d
                                     ReasoningPassthrough.merge(extraAcc, d.extra)
                                     if (fr != null) finishReason = fr
@@ -415,7 +394,7 @@ class CloudApiClient(private val config: CloudApiConfig) {
                 if (currentData.isNotEmpty() && isActive) {
                     val data = currentData.toString().trim()
                     if (data != "[DONE]") {
-                        val d = parseDelta(data, anthropicThinking, geminiIndexer)
+                        val d = parseDelta(data)
                         val (reasoning, content, u, toolDeltas, fr) = d
                         ReasoningPassthrough.merge(extraAcc, d.extra)
                         if (fr != null) finishReason = fr
@@ -450,12 +429,7 @@ class CloudApiClient(private val config: CloudApiConfig) {
                 // 滤掉只带签名没带 function 的空壳条目（见 parseDelta），别让它变成幽灵工具调用
                 toolCalls = toolCallMap.values.filter { it.name.isNotBlank() }, finishReason = finishReason,
                 // 本轮消息级私有透传字段归档成原始 JSON 串；一个都没收到就是 null（不存不写）。
-                // Anthropic 走它自己那份：要回传的是**整个 thinking 块序列连签名**，
-                // 而 ReasoningPassthrough 是按 OpenAI 那边的键名白名单收的，两者形状不同。
-                extra = when (protocol) {
-                    ChatProtocol.ANTHROPIC -> AnthropicProtocol.finishThinking(anthropicThinking)
-                    else -> ReasoningPassthrough.finish(extraAcc, config.baseUrl)
-                }
+                extra = ReasoningPassthrough.finish(extraAcc, config.baseUrl)
             ).also { ApiMonitor.record(config.baseUrl, config.model, usage?.promptTokens ?: 0, usage?.completionTokens ?: 0, usage?.totalTokens ?: 0, System.currentTimeMillis() - startTime, success = true, null) }
         } catch (e: Exception) {
             activeCall = null
@@ -603,13 +577,7 @@ class CloudApiClient(private val config: CloudApiConfig) {
      */
     private fun parseDelta(
         data: String,
-        anthropicThinking: MutableMap<Int, AnthropicProtocol.ThinkingBlock>,
-        geminiIndexer: GeminiProtocol.ToolIndexer,
-    ): Delta = when (protocol) {
-        ChatProtocol.ANTHROPIC -> AnthropicProtocol.parse(data, anthropicThinking).toDelta()
-        ChatProtocol.GEMINI -> GeminiProtocol.parse(data, geminiIndexer).toDelta()
-        ChatProtocol.OPENAI -> parseOpenAiDelta(data)
-    }
+    ): Delta = parseOpenAiDelta(data)
 
     private fun parseOpenAiDelta(data: String): Delta {
         return try {

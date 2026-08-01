@@ -5,53 +5,16 @@ import java.util.Locale
 /**
  * 这个端点讲的是**哪一种**聊天协议。
  *
- * 在这之前全 App 只会讲一种：OpenAI 的 `/chat/completions`。Anthropic 与 Google 各自都提供了
- * 一层 OpenAI 兼容端点，所以「能用」一直不是问题；问题是兼容层是各家自己按最小公倍数做的，
- * 结果是一批**只有原生协议才有**的东西在兼容层上拿不到或会出错：
- *  · Anthropic：扩展思考的 `thinking` 块与它的 `signature`（开了思考又要调工具时，
- *    上一轮的思考块必须原样带回去，否则整轮被拒）、`cache_control` 提示缓存、
- *    100 万上下文的 beta 头、`tool_result` 里的图片。
- *  · Gemini：`thoughtSignature`（Gemini 3 系列多轮工具调用不带就 400——我们此前是靠
- *    在 OpenAI 兼容层里抓 `extra_content` 硬接的，见 ReasoningPassthrough）、
- *    `systemInstruction`、`thinkingBudget`、内置搜索/代码执行工具。
- *
- * 判定优先级：**用户显式指定 > 按 baseUrl 认**。自动判定只认官方域名，因为它必须在
- * 没有 Context、没读过任何配置的情况下也答得出来（冷启动第一句话就要用），
- * 而中转站/自建代理的域名是猜不出来的——那种情况让用户在配置页里直说。
- *
- * ⚠ 加新协议要同时补三处：[detect]、[CloudApiClient] 里的三个 when 分支
- * （URL / 请求头 / 请求体+解析），以及配置页那个下拉。少补一处的表现是「选了没反应」。
+ * Apache-2.0 精简版：只保留 OpenAI `/chat/completions` 协议（所有兼容端点、自建服务都走它）。
+ * Anthropic / Gemini 原生协议已移除（那两家是第三方闭源云服务，不属于「自建可控端点」）。
+ * 想接本地/自建的 llama.cpp / Ollama / vLLM 等，一律走 OpenAI 兼容。
  */
 enum class ChatProtocol(val displayName: String) {
     /** OpenAI `/chat/completions`。所有兼容端点走这条，也是缺省。 */
-    OPENAI("OpenAI 兼容"),
-
-    /** Anthropic `/v1/messages`（原生）。 */
-    ANTHROPIC("Anthropic 原生"),
-
-    /** Google Gemini `:streamGenerateContent`（原生）。 */
-    GEMINI("Gemini 原生");
+    OPENAI("OpenAI 兼容");
 
     companion object {
-        /**
-         * 按 baseUrl 认协议。只认官方域名——**别往这里加中转站的关键字**：
-         * 中转站的域名千奇百怪且随时变，认错的代价是整个请求发错格式、一句话都回不了。
-         * 中转站请让用户在配置页显式选（[of] 会优先读那个）。
-         *
-         * 注意 Anthropic 与 Google 各自的 OpenAI 兼容路径要**排除掉**：
-         *  · `api.anthropic.com/v1/openai/...`（Anthropic 的 OpenAI 兼容层）
-         *  · `generativelanguage.googleapis.com/v1beta/openai/...`（Gemini 的 OpenAI 兼容层）
-         * 用户特意填了兼容路径就是要走兼容层，按域名把他改判成原生等于替他做了个他没要的决定。
-         */
-        fun detect(baseUrl: String): ChatProtocol {
-            val url = baseUrl.lowercase(Locale.ROOT)
-            if ("/openai" in url) return OPENAI          // 两家的兼容层都在 /openai 段下
-            return when {
-                "api.anthropic.com" in url -> ANTHROPIC
-                "generativelanguage.googleapis.com" in url -> GEMINI
-                else -> OPENAI
-            }
-        }
+        fun detect(baseUrl: String): ChatProtocol = OPENAI
 
         /** 这个配置最终讲哪种协议：用户显式指定优先，否则按域名认。 */
         fun of(baseUrl: String, model: String): ChatProtocol =

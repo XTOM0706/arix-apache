@@ -836,12 +836,10 @@ private fun PurposeEditor(
     )
     Spacer(Modifier.height(4.dp))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        // null = 自动（不落 override），其余三档是显式指定
+        // null = 自动（不落 override），OpenAI 是唯一显式指定
         val opts: List<Pair<String, com.arix.cloudapi.ChatProtocol?>> = listOf(
             tr("自动") to null,
             tr("OpenAI") to com.arix.cloudapi.ChatProtocol.OPENAI,
-            tr("Anthropic") to com.arix.cloudapi.ChatProtocol.ANTHROPIC,
-            tr("Gemini") to com.arix.cloudapi.ChatProtocol.GEMINI,
         )
         opts.forEach { (label, p) ->
             val on = protocolPick == p
