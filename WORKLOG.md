@@ -1,9 +1,10 @@
 # WORKLOG — Arix Apache-2.0 精简版
 
-> 更新时间：2026-08-01（opencode 会话收尾）
+> 更新时间：2026-08-01（opencode 会话，暂停待续）
 > 工作区：`E:\ArixApache`（独立 git 仓）
-> 最近提交：`2c3d48c`
+> 最近提交：`49dccd3`
 > 公开仓库：**https://github.com/XTOM0706/arix-apache**（已推送，main）
+> ⚠ 本会话暂停前的工作见下方「未完成 / 待续」——**明天继续做「内置公告功能」**。
 
 ## 已完成（18 提交，编译 + 单测全绿）
 Apache-2.0 精简版：干净可内置的 AI 助手骨架，原创特色留给 GPL 满血版（XTOM0706/arix-app）当卖点。
@@ -22,14 +23,35 @@ RAG/搜索/浏览器、工具系统、MCP、Home Assistant、S3/MinIO、天气 o
 **更新引导：** 向导欢迎页最前放丑话「这是精简版，完整功能用 GPL 满血版」+ 关于页/更新页同样引导。
 
 ## 关键文件
-- `E:\ArixApache`（本地仓，18 提交，历史可回滚）
-- 主仓 `E:\OnyxAI` 未动
+- `E:\ArixApache`（本地仓，历史可回滚）
+- 主仓 `E:\OnyxAI`（GPL 满血版，未动代码，只改了 README QQ 群号）
+
+## 未完成 / 待续（明天做）
+**🔴 内置「公告」功能（两个仓都做，已拍板方案）**
+- 目标：软件里内置「公告」入口，从 GitHub Releases 拉公告展示 + 新 Release 弹通知。
+  以后公告直接在 hub 的 Releases 里发，软件自动拉取，不靠 QQ 群/邮箱。
+- 拍板：公告来源 = 主仓拉 `XTOM0706/arix-app`（自己），Apache 版拉 `XTOM0706/arix-app`（满血版，引导用）。
+- 形态：公告列表页 + 通知（两者都做）。
+- 现状摸底（已做）：
+  - `UpdateChecker`（UpdateCheckPage.kt）已能拉 Releases，`Release` 数据结构含 tag/name/notes/url/published/apkUrl/prerelease。
+  - `UpdateNotifier` 已有后台查更新 + 通知 + 弹窗（`EXTRA_OPEN_PAGE="update"` 路由）。
+  - 主仓 REPO 已指 `XTOM0706/arix-app`（UpdateCheckPage.kt:89）；Apache 版 REPO 也已指满血版。
+- 待做：新建「公告」页面拉**最新 N 条** Releases 列表展示（现有页面只显示最新一条）+ 通知复用/扩展。
+  两个仓分别做：Apache 版做进 E:\ArixApache，主仓做进 E:\OnyxAI。
+
+**QQ 群号已改（本会话）**
+- 主仓 E:\OnyxAI：README.md（2 处）、README_EN.md（2 处）、terminal/.../AboutActivity.kt —— `1063208484` → `1047592322`
+- 终端仓 E:\OnyxTerminal：README.md、terminal/.../AboutActivity.kt —— 同上
+- ⚠ 这些改动**尚未提交/推送**（明天一起处理或另行确认）
 
 ## 待办（未做）
 - i18n 里已删功能的翻译串（I18nStrings.kt / i18n_table.json）残留，不影响编译，纯清理层
 - 部分代码注释还引用已删功能（ToolManager/OnboardingPage 注释等），不影响编译
 - token 曾在对话日志暴露（ghp_7pCM...），**建议轮换**（GitHub → Developer settings → Tokens）
+- ⚠ `E:\ArixApache\app\build.gradle.kts` 有未提交改动（versionCode=1/versionName=0.0.1，定位为可被任何版本覆盖的垫底版）——**是否已提交需确认**（本会话最后一次 git 操作是提交 `49dccd3`）
 
 ## 技术要点
 - 编译：`cd E:\ArixApache; .\gradlew.bat :app:assembleDebug`
 - 推送走代理：`git -c http.proxy=http://127.0.0.1:7890 push origin main`
+- Apache 版 R8 release 已出：`app/build/outputs/apk/release/app-release.apk`（40.4 MB，正式密钥签名，
+  指纹 32726f2a...，与满血版同钥匙，可被任何版本覆盖安装）
