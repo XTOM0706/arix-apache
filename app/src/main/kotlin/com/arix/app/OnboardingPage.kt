@@ -430,6 +430,28 @@ private fun WelcomeStep(compact: Boolean) {
     val context = LocalContext.current
     Spacer(Modifier.height(if (compact) 4.dp else 20.dp))
 
+    // ⚠️ 丑话说在前头：这是 Apache-2.0 精简版，功能不全。想要完整功能，请用 GPL 满血版。
+    XtomCard(modifier = Modifier.stepIn(0)) {
+        Text(tr("⚠️ 这是精简版"), color = scheme.error, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(4.dp))
+        Text(tr("本版移除了部分能力（超级岛 / 语音通话 / 角色扮演 / 记忆图谱 / 云端市场 / 终端等），只适合二次开发与内置。"), color = scheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 16.sp)
+        Spacer(Modifier.height(6.dp))
+        Text(tr("想要完整功能，请用 GPL 满血版："), color = scheme.onSurfaceVariant, fontSize = 11.sp)
+        Text(
+            "https://github.com/XTOM0706/arix-app",
+            color = scheme.primary, fontSize = 11.sp,
+            modifier = Modifier.clickable {
+                runCatching {
+                    context.startActivity(
+                        android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/XTOM0706/arix-app"))
+                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
+            },
+        )
+    }
+    Spacer(Modifier.height(12.dp))
+
     // 图标：入场时从小弹到位（带一点回弹），落定后一圈光晕缓慢呼吸。
     // 全走 withFrameNanos，动画缩放=0 也照样动；呼吸只画在 Canvas 里，不重组。
     val pop = rememberFrameProgress(key = Unit, durationMs = 520, easing = OvershootEasing)
@@ -489,26 +511,6 @@ private fun WelcomeStep(compact: Boolean) {
         color = scheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 16.sp,
         modifier = Modifier.stepIn(3),
     )
-    Spacer(Modifier.height(10.dp))
-    // Apache-2.0 精简版引导：完整功能在 GPL 满血版里，点开官方仓库。
-    XtomCard(modifier = Modifier.stepIn(3)) {
-        Text(tr("这是精简版"), color = scheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(4.dp))
-        Text(tr("本版移除了部分能力（超级岛/语音通话/角色扮演/记忆图谱/云端市场/终端等）。想要完整功能，请用 GPL 满血版。"), color = scheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 16.sp)
-        Spacer(Modifier.height(6.dp))
-        Text(
-            "https://github.com/XTOM0706/arix-app",
-            color = scheme.primary, fontSize = 11.sp,
-            modifier = Modifier.clickable {
-                runCatching {
-                    context.startActivity(
-                        android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/XTOM0706/arix-app"))
-                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                }
-            },
-        )
-    }
 }
 
 // ============================================================
