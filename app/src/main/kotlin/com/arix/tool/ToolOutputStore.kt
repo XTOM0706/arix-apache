@@ -86,7 +86,6 @@ object ToolOutputStore {
                     append("已存到工作区 ").append(rel).append("，需要更多就去读它：")
                     append(READER).append("(path=\"").append(rel).append("\", pattern=\"正则\") 先定位、")
                     append(READER).append("(path=\"").append(rel).append("\", offset=行号, limit=行数) 再精读")
-                    if (CapabilityProbe.has(ToolRequirement.TERMINAL_APP)) append("；也可以用 linux_exec 里的 grep/sed 处理")
                 }
                 // ⚠ 下面这句是给模型看的：说清「路径存着但你读不了」，免得它拿路径去撞一个调不通的工具。
                 else -> {

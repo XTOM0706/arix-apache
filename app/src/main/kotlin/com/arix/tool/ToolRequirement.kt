@@ -24,7 +24,6 @@ enum class ToolRequirement(
     UI_AUTOMATION("界面自动化（无障碍服务或 Shizuku）", "request_permission(permission=\"accessibility\") 或 request_permission(permission=\"shizuku\") 申请开启"),
     NOTIFICATION_LISTENER("通知使用权", "request_permission(permission=\"notification_listener\") 申请开启"),
     USAGE_STATS("使用情况访问权限", "request_permission(permission=\"usage_stats\") 申请开启"),
-    TERMINAL_APP("Arix 终端 App", "让用户到「设置 → 终端」安装它"),
 }
 
 /**
@@ -70,7 +69,6 @@ object CapabilityProbe {
                 com.arix.app.XtomAccessibilityService.instance != null || ShizukuAccess.granted()
             ToolRequirement.NOTIFICATION_LISTENER -> com.arix.app.NotificationAwarenessPrefs.hasAccess(c)
             ToolRequirement.USAGE_STATS -> UsageStatsTool.hasAccess(c)
-            ToolRequirement.TERMINAL_APP -> TerminalClient.isInstalled(c)
         }
     } catch (_: Exception) { true }   // fail-open，见上方说明
 }

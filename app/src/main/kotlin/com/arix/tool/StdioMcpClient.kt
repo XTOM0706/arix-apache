@@ -15,31 +15,28 @@ import java.util.concurrent.atomic.AtomicInteger
 // ============================================================
 // MCP STDIO 传输 —— 起一个 MCP server 子进程，行分隔 JSON-RPC over stdin/stdout。
 // 与 HTTP 端点 MCP（McpTool）并列，补上本地 MCP server 这条路。
-//
-// 优先跑在**独立终端 App 的 proot 环境**里（那儿有 apt 装的 node/python，MCP server 才真能跑）；
-// 终端 App 没装才回落系统 sh（安卓自带的 sh 没有 node/python，基本只能跑纯 shell 的 server）。
+// 用安卓自带的 sh 起进程；需要 node/python 的 MCP server 由用户在 shell 环境里装好（Apache-2.0 版不含终端 App）。
 //
 // —— 连接生命周期（2026-07-27 逐行核对过代码路径，别再凭注释猜）——
 //  * **进程复用**：一次 [ensureStarted] 起进程 + 一次 initialize 握手，之后 tools/list、tools/call
 //    全走同一条 stdin/stdout。[alive] 为真就直接用，不重起、不重握手。
 //    client 本身由 [StdioMcpRegistry] 按配置名长期持有（发现/刷新也拿同一个）。
 //  * **并发**：[startMutex] 串行化冷启动，并发首调只会起一份进程、握一次手；在途请求按 id 各认各的。
-//  * **重连**：进程死了（EOF / onExit / 写失败）会把 started 置 false，下一次调用自动重起并重新握手；
+//  * **重连**：进程死了（EOF / 写失败）会把 started 置 false，下一次调用自动重起并重新握手；
 //    连败带指数退避（见 failStreak），免得命令根本跑不起来时每次调用都刷一个短命进程。
 //    **只有「消息压根没写出去」才自动重发**（见 rpcRetrying）——写出去了没回音不重发，
 //    对端可能已经把副作用做完了。
-//  * **未解决**：[StdioMcpRegistry.closeAll] 全项目没有调用点，App 退出不收子进程；
-//    跑在终端 App 那侧的 proot 进程更是能活过我们整个进程。要收得在 Application/主 Activity 挂钩。
+//  * **未解决**：[StdioMcpRegistry.closeAll] 全项目没有调用点，App 退出不收子进程。
+//    要收得在 Application/主 Activity 挂钩。
 // ============================================================
 class StdioMcpClient(private val context: Context, internal val command: String) {
     private var proc: Process? = null                            // sh 兜底
-    private var remote: TerminalClient.ProcessSession? = null     // 终端 App 的 proot 进程
     private var writer: Writer? = null
     private val pending = ConcurrentHashMap<Int, CompletableDeferred<JSONObject>>()
     private val idSeq = AtomicInteger(1)
     @Volatile private var started = false
     private val lock = Any()
-    private val writeLock = Any()      // 只串行化 sh 兜底那条本地流的写
+    private val writeLock = Any()      // 只串行化本地流的写
     private val startMutex = Mutex()
 
     /**
@@ -58,7 +55,7 @@ class StdioMcpClient(private val context: Context, internal val command: String)
     }
 
     private fun alive(): Boolean =
-        started && (remote?.isAlive == true || proc?.isAlive == true)
+        started && proc?.isAlive == true
 
     suspend fun ensureStarted(): Boolean {
         if (alive()) return true
@@ -82,42 +79,23 @@ class StdioMcpClient(private val context: Context, internal val command: String)
     }
 
     /**
-     * 收掉当前传输通道（进程/远端会话），并清空字段。
+     * 收掉当前传输通道（进程），并清空字段。
      * 起新进程前必须先做：进程被标记为死（started=false）时对象仍留在字段里，直接覆盖就等于把一个
      * **可能还活着**的子进程丢掉不管——之后谁也不再持有它，收不回来了。
-     * kill/destroy 刻意放在锁外：`remote.kill()` 是 binder 调用，圈进锁里会和 writeLine 互相卡死。
+     * destroy 刻意放在锁外：避免圈进锁里和 writeLine 互相卡死。
      */
     private fun disposeTransport() {
-        val (p, r) = synchronized(lock) {
-            val v = proc to remote
-            proc = null; remote = null; writer = null
+        val p = synchronized(lock) {
+            val v = proc
+            proc = null; writer = null
             v
         }
         try { p?.destroy() } catch (_: Exception) {}
-        try { r?.kill() } catch (_: Exception) {}
     }
 
     private suspend fun startTransport(): Boolean {
         disposeTransport()
-        // ① 终端 App 的 proot 环境
-        if (TerminalClient.isInstalled(context)) {
-            val s = try {
-                TerminalClient.openProcess(
-                    context, command,
-                    onStdout = { onStdoutChunk(it) },
-                    onStderr = { },                       // 排空即可，别污染 stdout 上的 JSON-RPC
-                    onExit = { started = false; failAllPending() },
-                    // 发现/刷新会走到这里（OperitCompat.refresh 是 runBlocking），
-                    // 不能因为环境没装好就卡在几十秒的 bootstrap 解压上：没装好就直接回落。
-                    installIfNeeded = false,
-                )
-            } catch (_: Exception) { null }
-            if (s != null) {
-                synchronized(lock) { remote = s; proc = null; writer = null; started = true }
-                return true
-            }
-        }
-        // ② 系统 sh 兜底
+        // 系统 sh：MCP server 通常要 node/python，由用户在 shell 环境里装好；安卓自带 sh 起的是它自己的路径。
         return withContext(Dispatchers.IO) {
             try {
                 val home = AiWorkspace.root(context)
@@ -126,35 +104,11 @@ class StdioMcpClient(private val context: Context, internal val command: String)
                 }
                 pb.redirectErrorStream(false)
                 val p = pb.start()
-                synchronized(lock) { proc = p; remote = null; writer = p.outputStream.writer(Charsets.UTF_8); started = true }
+                synchronized(lock) { proc = p; writer = p.outputStream.writer(Charsets.UTF_8); started = true }
                 startReaders(p)
                 true
             } catch (_: Exception) { synchronized(lock) { started = false }; false }
         }
-    }
-
-    // 回调送来的是**任意切分的字节块**，不是行。必须先按字节切行、再整行解码 UTF-8：
-    // 若逐块 String(bytes)，跨块的多字节字符（中文输出是常态）两边各变一个 U+FFFD，
-    // 整行 JSON 解析失败 → 那条响应直接消失、调用方干等 60s 超时。
-    private val lineBuf = java.io.ByteArrayOutputStream()
-
-    /** 单行上限：没有换行的输出（进度条/二进制）不能无限攒，手表内存扛不住。 */
-    private val maxLineBytes = 1 shl 20
-
-    private fun onStdoutChunk(data: ByteArray) {
-        val lines = ArrayList<String>()
-        synchronized(lineBuf) {
-            for (b in data) {
-                if (b == '\n'.code.toByte()) {
-                    lines.add(String(lineBuf.toByteArray(), Charsets.UTF_8))
-                    lineBuf.reset()
-                } else {
-                    if (lineBuf.size() >= maxLineBytes) lineBuf.reset()  // 这么长的行不可能是 JSON-RPC 响应，丢掉
-                    lineBuf.write(b.toInt())
-                }
-            }
-        }
-        lines.forEach { handleLine(it) }
     }
 
     /** 一行 JSON-RPC 响应：认领对应的在途请求。 */
@@ -191,13 +145,10 @@ class StdioMcpClient(private val context: Context, internal val command: String)
 
     private fun writeLine(o: JSONObject): Boolean = try {
         val line = o.toString() + "\n"
-        // 只在锁里取通道，**不要把 binder/IO 调用留在锁内**：对端不读时会阻塞，
-        // 连带 close()/startTransport 一起卡死。
-        val (r, w) = synchronized(lock) { remote to writer }
+        // 只在锁里取通道，**不要把 IO 调用留在锁内**：对端不读时会阻塞，连带 close()/startTransport 一起卡死。
+        val w = synchronized(lock) { writer }
         when {
-            // 远端：整行交给一次 writeStdin，服务端按块入队、单线程写出，天然是原子的
-            r != null -> r.write(line)                       // 写失败会返回 false 并把会话标记为死
-            // sh 兜底：write+flush 不是原子的，并发 rpc 会把两行交织成一行烂 JSON、两边都等到超时。
+            // write+flush 不是原子的，并发 rpc 会把两行交织成一行烂 JSON、两边都等到超时。
             // 单独一把锁串行化——它只护本地流，不会像原来那样把 binder 调用圈进锁里。
             w != null -> synchronized(writeLock) { w.write(line); w.flush(); true }
             else -> false
@@ -264,10 +215,8 @@ class StdioMcpClient(private val context: Context, internal val command: String)
     private fun startFailMessage(): String = when {
         inCooldown() ->
             "MCP(stdio) 上次启动失败，冷却中（约 ${((coolUntilMs - nowMs()) / 1000).coerceAtLeast(1L)} 秒后可再试）：$command"
-        TerminalClient.isInstalled(context) ->
-            "MCP(stdio) 启动失败：命令在 Linux 环境里没跑起来（检查 node/python 是否已 pkg install、命令是否正确）。"
         else ->
-            "MCP(stdio) 启动失败：未安装「Arix 终端」App，只能用系统 sh 兜底，跑不了 node/python 的 MCP server。请先在终端页安装终端 App。"
+            "MCP(stdio) 启动失败：命令在 sh 里没跑起来（检查 node/python 是否已装、命令是否正确）。"
     }
 
     suspend fun callTool(toolName: String, args: JSONObject): String {

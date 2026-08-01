@@ -1064,7 +1064,6 @@ import androidx.compose.ui.unit.IntOffset
                       "usage" -> UsageStatsPage(context = context)
                       "workflows" -> WorkflowPage(scope = scope, context = context)
                       "browser" -> BrowserPage(onBack = { currentPage = "chat" })
-                      "terminal" -> TerminalPage(scope = scope, context = context)
                       // 旧路由保留：外部/历史入口可能还指着它，MonitorPage 现在只是转发到活动中心
                       "monitor" -> MonitorPage(scope = scope)
                       "activity_center" -> ActivityCenterPage(scope = scope, onOpenRoute = { navTo(it) })

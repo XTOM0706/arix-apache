@@ -8,14 +8,10 @@ plugins {
 }
 
 // ============================================================
-// 正式签名密钥（与 terminal/build.gradle.kts 同一套读法，**必须是同一把钥匙**）
+// 正式签名密钥
 //
 // 密钥文件与口令一律不入库：从 local.properties（已 gitignore）或环境变量读，
 // 读不到则回落 debug key —— 拿不到私钥的人照样能编译出 release 包。
-//
-// ⚠️ 终端的 `BIND_TERMINAL` 是 signature 级权限：主 App 与终端签名不一致就绑不上服务，
-// 而这在编译期完全看不出来，只在运行时表现为「终端功能整个不工作」。
-// ⚠️ 换钥匙会让已装的旧版无法覆盖升级，用户必须先卸载。
 // ============================================================
 private val arixKeyProps = Properties().apply {
     rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
@@ -30,7 +26,7 @@ private val arixStoreFile = arixSecret("arix.storeFile", "ARIX_STORE_FILE")
 android {
     namespace = "com.arix.app"
     compileSdk = 36
-    // AIDL：绑定独立终端 App 的 ITerminalService（跨进程驱动 proot 终端）
+    // AIDL：进程间接口（隐身取页 IIncognitoFetch、特权 IXtomPrivileged）
     buildFeatures { aidl = true }
 
     signingConfigs {
@@ -112,9 +108,6 @@ android {
         // targetSdk 28 是本项目刻意为之（旧 SELinux 域跑 proot），不是漏更新 → 关掉这条否则 release 被 lintVital 拦死。
         disable += "ExpiredTargetSdkVersion"
     }
-
-    // 终端 App **不内置**进主包（否则主 APK 白涨 33MB）：终端页点安装时从 GitHub Release
-    // 按需下载（走镜像回退），见 TerminalInstaller。
 }
 
 kotlin {

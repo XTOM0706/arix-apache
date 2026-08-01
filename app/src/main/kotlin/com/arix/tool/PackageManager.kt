@@ -153,10 +153,6 @@ fun createBuiltInPackages(context: Context): List<PackageDef> = listOf(
         listOf(), enabledByDefault = true),
     PackageDef("shell", "Shell 命令", "执行 Android Shell 命令：应用沙盒级，或经 Shizuku(免root ADB级)/root 跑系统命令；支持超时和危险操作拦截。", "工具",
         listOf(ShellTool(context)), enabledByDefault = false),
-    // id 保持 local_linux 不动：它是 SharedPreferences 的 key(pkg_$id)，改了用户已开启的包会退回默认状态。
-    // 显示名改掉是因为「内置 Linux」把它说大了——它不是发行版，是跑在安卓自带内核上的一套命令行环境。
-    PackageDef("local_linux", "Arix 工作台", "在独立「Arix 终端」App 的 Linux 环境执行命令：bash/python3/apt/git/coreutils 全生态，pkg/apt install 随便装不打架。跑脚本/装包/编译都用它；也能起交互会话(往里输入、随时看输出)跑那些一次性等不完或要回答 y/n 的活。未装该 App 时会提示安装。", "工具",
-        listOf(LocalLinuxTool(context)), enabledByDefault = true),
     PackageDef("ui_control", "界面自动化", "读当前屏幕(文字+可点坐标)并代你点按/滑动/输入/返回主页——让 AI 帮你操作其它 App。需开无障碍服务，免 root。", "工具",
         listOf(UiControlTool(context)), enabledByDefault = false),
     PackageDef("social_share", "社交分享", "通过微信/QQ/朋友圈分享文本消息。", "工具",
@@ -202,8 +198,6 @@ fun createBuiltInPackages(context: Context): List<PackageDef> = listOf(
     // 增强对话 (Operit 移植)
     PackageDef("worldbook", "世界书", "管理世界设定/角色背景/故事设定（持久化）。", "增强对话",
         listOf(WorldBookTool(context)), enabledByDefault = false),
-    PackageDef("code_runner", "代码运行", "真实执行 python/js(node)/bash/ruby/php 代码（依托内嵌 Linux），js/数学可离线算。", "工具",
-        listOf(CodeRunnerTool(context)), enabledByDefault = false),
     PackageDef("file_converter", "文件转换 / 生成文档", "文本(JSON/CSV/MD/HTML)互转 + 图片格式(PNG/JPG/WEBP)转换 + " +
         "把 Markdown/HTML 生成 PDF 或 Word(.docx) 存到「下载」目录（零依赖，不需要装任何东西）。", "工具",
         listOf(FileConverterTool(context)), enabledByDefault = false),
