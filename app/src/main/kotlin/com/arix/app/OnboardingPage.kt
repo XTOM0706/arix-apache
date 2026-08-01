@@ -1226,7 +1226,6 @@ private fun RoleStep(compact: Boolean) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val scheme = MaterialTheme.colorScheme
-    val cardManager = remember { CharacterCardManager(context) }
     // 认「当前选的是哪张」用人设文本比对，不用卡名：卡名会跟着界面语言翻译，
     // 换个语言重跑向导就认不出自己上次建的卡了；人设是中文原串，永远稳定。
     var currentSetting by remember { mutableStateOf("") }
@@ -1254,7 +1253,7 @@ private fun RoleStep(compact: Boolean) {
     }
 
     LaunchedEffect(Unit) {
-        currentSetting = withContext(Dispatchers.IO) { cardManager.getDefault()?.characterSetting.orEmpty() }
+        currentSetting = withContext(Dispatchers.IO) { AssistantRolePrefs.characterSetting(context) }
     }
 
     fun choose(p: RolePreset) {
@@ -1262,13 +1261,7 @@ private fun RoleStep(compact: Boolean) {
         busy = true
         scope.launch {
             withContext(Dispatchers.IO) {
-                // 重跑向导时别重复建卡：人设一样的已经有就直接设为默认
-                val existing = cardManager.allCards.first().firstOrNull { it.characterSetting == p.setting }
-                val id = existing?.id ?: cardManager.create(
-                    name = p.name, description = p.desc, characterSetting = p.setting,
-                    tone = p.tone, length = p.length,
-                )
-                cardManager.setDefault(id)
+                AssistantRolePrefs.setCharacterSetting(context, p.setting)
             }
             currentSetting = p.setting
             busy = false
@@ -1277,7 +1270,7 @@ private fun RoleStep(compact: Boolean) {
 
     StepTitle(
         Icons.Outlined.AutoAwesome, tr("选个角色"),
-        tr("决定它的说话方式和做事习惯。选了会建成一张角色卡，之后能改也能再建别的。"),
+        tr("决定它的说话方式和做事习惯。选了会存为你的默认人设，之后在对话里也能按自己需要改。"),
         compact,
     )
 
@@ -1362,10 +1355,9 @@ private fun DoneStep(compact: Boolean) {
     LaunchedEffect(Unit) {
         val summary = withContext(Dispatchers.IO) {
             val mgr = CloudApiConfigManager(context)
-            val cards = CharacterCardManager(context)
             Triple(
                 (mgr.getActiveByPurpose("chat") ?: mgr.getActive())?.let { "${it.name} · ${it.model}" },
-                cards.getDefault()?.name,
+                AssistantRolePrefs.characterSetting(context).takeIf { it.isNotBlank() },
                 androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED,
             )
         }

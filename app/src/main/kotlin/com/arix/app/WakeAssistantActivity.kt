@@ -281,7 +281,7 @@ internal fun WakeAssistantScreen(
             // 入库：首轮建会话、之后每轮保存 → 唤醒对话能在「对话管理」里找到并回看，不再离页即丢。
             // 会话绑定当前角色卡；标题默认「新对话」→ saveMessages 触发自动起标题（与主聊天一致）。
             try {
-                if (convId == null) convId = configManager.conversationManager.create(characterCardId = cardId, source = "voice")
+                if (convId == null) convId = configManager.conversationManager.create(source = "voice")
                 convId?.let { configManager.saveConversation(it, conversation.toList()) }
             } catch (_: Exception) {}
             // 朗读（Edge/云端/系统，见语音朗读设置）
@@ -328,23 +328,19 @@ internal fun WakeAssistantScreen(
     androidx.compose.runtime.LaunchedEffect(autoListenTick) { if (autoListenTick > 0) startListening() }
 
     androidx.compose.runtime.LaunchedEffect(Unit) {
-        // 绑定当前/默认角色卡 + 算续接摘要 + 取模型系统提示（让唤醒助手带人设/记忆/人格延续）
+        // 组装身份 + 取模型系统提示（让唤醒助手带人设/记忆）
         try {
-            // 优先上次在聊的角色卡（ActiveChatContext），否则默认卡
-            val cardMgr = CharacterCardManager(context)
-            val card = (com.arix.tool.ActiveChatContext.characterCardId?.let { cardMgr.getById(it) }) ?: cardMgr.getDefault()
-            cardId = card?.id
-            com.arix.tool.ActiveChatContext.characterCardId = cardId
+            cardId = null
+            com.arix.tool.ActiveChatContext.characterCardId = null
             identity = ChatIdentity(
                 userName = IdentityPrefs.userName(context).ifBlank { "我" },
                 userAvatar = IdentityPrefs.userAvatar(context),
-                aiName = card?.name ?: "助手",
-                aiAvatar = card?.avatarPath?.takeIf { a -> a.startsWith("content://") || a.startsWith("file://") || a.startsWith("http") || a.startsWith("/") }
-                    ?: cardId?.let { IdentityPrefs.aiAvatar(context, it) },
+                aiName = "助手",
+                aiAvatar = IdentityPrefs.aiAvatar(context, 0L),
             )
             apiSysPrompt = configManager.getActiveByPurpose("chat")?.systemPrompt
             // 每次唤醒都是全新对话：不注入上次对话的续接摘要（continuationText 保持 null）。
-            // 角色卡人设 + 长期记忆仍注入，所以唤醒出来还是「他」，只是不接上次那轮的话题。
+            // 人设 + 长期记忆仍注入，所以唤醒出来还是「他」，只是不接上次那轮的话题。
         } catch (_: Exception) {}
         // 唤醒应答语：先说一句"我在"之类（固定/自定义/AI 生成），让用户知道已唤起、且是「他」在回应
         try {

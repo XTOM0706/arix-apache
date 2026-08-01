@@ -18,14 +18,12 @@ class ConversationManager(private val context: Context) {
     private val titlingIds = java.util.Collections.synchronizedSet(HashSet<Long>())
 
     suspend fun create(
-        characterCardId: Long? = null,
         configId: Long? = null,
         title: String = "新对话",
         source: String = "chat"
     ): Long {
         return repo.create(
             com.arix.data.entity.ConversationEntity(
-                characterCardId = characterCardId,
                 configId = configId,
                 title = title,
                 source = source

@@ -18,7 +18,6 @@ private const val COL_CHUNK_CHARS = 256 * 1024
 // 列表/抽屉/分组等只需要元数据的地方一律走这个投影，任何大对话都不会撑爆窗口。
 data class ConversationSummary(
     val id: Long,
-    val characterCardId: Long?,
     val configId: Long?,
     val title: String,
     val isPinned: Boolean,
@@ -39,13 +38,13 @@ interface ConversationDao {
 
     // 轻量投影流：列表/抽屉走这里，永不拉大列。
     // ⚠ isLocked 只挡删除/批量清理，不改排序：锁定的会话不天然置顶，想置顶靠现有的 isPinned（可与锁定并用）。
-    @Query("SELECT id, characterCardId, configId, title, isPinned, isArchived, createdAt, updatedAt, source, folder, isLocked FROM conversations WHERE isArchived = 0 ORDER BY isPinned DESC, updatedAt DESC")
+    @Query("SELECT id, configId, title, isPinned, isArchived, createdAt, updatedAt, source, folder, isLocked FROM conversations WHERE isArchived = 0 ORDER BY isPinned DESC, updatedAt DESC")
     fun getActiveSummaries(): Flow<List<ConversationSummary>>
 
-    @Query("SELECT id, characterCardId, configId, title, isPinned, isArchived, createdAt, updatedAt, source, folder, isLocked FROM conversations WHERE isArchived = 1 ORDER BY updatedAt DESC")
+    @Query("SELECT id, configId, title, isPinned, isArchived, createdAt, updatedAt, source, folder, isLocked FROM conversations WHERE isArchived = 1 ORDER BY updatedAt DESC")
     fun getArchivedSummaries(): Flow<List<ConversationSummary>>
 
-    @Query("SELECT id, characterCardId, configId, title, isPinned, isArchived, createdAt, updatedAt, source, folder, isLocked FROM conversations WHERE id = :id")
+    @Query("SELECT id, configId, title, isPinned, isArchived, createdAt, updatedAt, source, folder, isLocked FROM conversations WHERE id = :id")
     suspend fun getSummaryById(id: Long): ConversationSummary?
 
     // 全文索引补建的遍历清单（新→旧，先补最近的对话，用户最可能搜的就是它们）。
@@ -99,12 +98,6 @@ interface ConversationDao {
         return if (sb.isEmpty()) null else sb.toString()
     }
 
-    // 只取角色卡 id。**别为了这一个字段走 getByIdAssembled**：那个会把 messagesJson 整列
-    // （可达 MB 级，还要分块多次查询）连同分支树一起拼回来，而调用方只看一眼 characterCardId。
-    // 这条在每轮助手回复收尾都会走到，是热路径。
-    @Query("SELECT characterCardId FROM conversations WHERE id = :id")
-    suspend fun cardIdOf(id: Long): Long?
-
     // 按 id 分列拼装完整实体：绕开「整行 SELECT * 进单个游标窗口」的 2MB 上限。
     // messagesJson / branchesJson 各自单独、且分块读取（readMessagesJson/readBranchesJson），
     // 即便某一列自身 > 2MB 也不会撑爆窗口——彻底消除单列上限，而非只赌单列 < 2MB。
@@ -112,7 +105,6 @@ interface ConversationDao {
         val s = getSummaryById(id) ?: return null
         return ConversationEntity(
             id = s.id,
-            characterCardId = s.characterCardId,
             configId = s.configId,
             title = s.title,
             messagesJson = readMessagesJson(id),
@@ -137,7 +129,7 @@ interface ConversationDao {
 
     // 内容/标题搜索：LIKE 在 SQLite 内部求值，只把小列投影进窗口（不物化 messagesJson），故不会崩。
     // 命中后如需片段，另按 id 调 readMessagesJson 分块取，只对少数命中项付代价。
-    @Query("SELECT id, characterCardId, configId, title, isPinned, isArchived, createdAt, updatedAt, source, folder, isLocked FROM conversations WHERE title LIKE '%' || :q || '%' OR messagesJson LIKE '%' || :q || '%' ORDER BY isArchived ASC, updatedAt DESC LIMIT :limit")
+    @Query("SELECT id, configId, title, isPinned, isArchived, createdAt, updatedAt, source, folder, isLocked FROM conversations WHERE title LIKE '%' || :q || '%' OR messagesJson LIKE '%' || :q || '%' ORDER BY isArchived ASC, updatedAt DESC LIMIT :limit")
     suspend fun searchSummaries(q: String, limit: Int): List<ConversationSummary>
 
     // 注意：不要再加 `SELECT *` 的整表/整行会话查询。单条会话的 messagesJson / branchesJson 各自都可能超 2MB
@@ -170,9 +162,6 @@ interface ConversationDao {
 
     @Query("UPDATE conversations SET title = :title WHERE id = :id")
     suspend fun setTitle(id: Long, title: String)
-
-    @Query("UPDATE conversations SET characterCardId = :characterCardId WHERE id = :id")
-    suspend fun setCharacterCard(id: Long, characterCardId: Long)
 
     @Query("UPDATE conversations SET folder = :folder WHERE id = :id")
     suspend fun setFolder(id: Long, folder: String)

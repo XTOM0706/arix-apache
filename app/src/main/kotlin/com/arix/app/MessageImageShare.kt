@@ -419,8 +419,7 @@ object MessageImageShare {
             val isToolMeta = b.toolCalls != null && b.text.isBlank()
             if (!isToolMeta) XtomBubbleSurface(isUser = isUser) {
                 val raw = b.text.takeUnless { it == "null" } ?: " "
-                // 与聊天页一致：角色卡「显示替换规则」只影响显示，图里也照做，所见即所得
-                val body = remember(raw, isUser) { capText(CardRoleplayStore.applyDisplay(raw, isUser)) }
+                val body = capText(raw)
                 val color = if (isUser) scheme.onPrimary else scheme.onSurface
                 if (isUser) Text(body, color = color, fontSize = 13.sp)
                 else MarkdownText(body, color = color, fontSize = 13.sp)   // ← Markdown 真渲染

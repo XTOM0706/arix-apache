@@ -344,15 +344,13 @@ object ContextCompressor {
             org.json.JSONArray(out.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim())
         } catch (_: Exception) { return }
         if (arr.length() == 0) return
-        // 只要角色卡 id：走投影列，别把整份会话拼回来（getById 会连 messagesJson 一起分块读）
-        val cardId = try { CloudApiConfigManager(context).conversationManager.repo.cardIdOf(convId) } catch (_: Exception) { null }
         val mm = MemoryManager(context)
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
             val title = o.optString("title").take(80); val content = o.optString("content").take(500)
             if (title.isBlank() || content.isBlank()) continue
             mm.upsertByTitle(title, content, "auto_extract",
-                o.optDouble("importance", 0.5).toFloat().coerceIn(0f, 1f), cardId, emptyList(),
+                o.optDouble("importance", 0.5).toFloat().coerceIn(0f, 1f), null, emptyList(),
                 o.optString("type", "fact").ifBlank { "fact" })
         }
     }

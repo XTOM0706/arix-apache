@@ -275,7 +275,7 @@ object GitHubBackup {
     // manifest.json 保持**明文**：里面只有条数/字节数/时间，没有任何用户内容；而「本地 vs 云端对比」
     // 这个页面必须在没输口令时也能用。manifest 里的 size 记的也是**明文长度**，否则对比页会永远显示不一致。
     // ========================================================
-    val BLOCKS = listOf("configs" to "配置", "cards" to "角色卡", "worlds" to "世界书", "memories" to "记忆", "conversations" to "对话")
+    val BLOCKS = listOf("configs" to "配置", "memories" to "记忆", "conversations" to "对话")
     private fun blockFile(b: String) = "block_$b.json"
     /** 加密分块的文件名。用不同后缀，是为了让"云端到底是明文还是密文"从文件名就能看出来、也便于删掉明文旧版。 */
     private fun blockFileEnc(b: String) = "block_$b.enc"
@@ -292,10 +292,6 @@ object GitHubBackup {
         return when (block) {
             "configs" -> JSONObject().put("configs", JSONArray().also { arr ->
                 db.apiConfigDao().getAll().first().forEach { arr.put(JSONObject(ImportExport.exportConfig(it))) } }).toString()
-            "cards" -> JSONObject().put("cards", JSONArray().also { arr ->
-                db.characterCardDao().getAll().first().forEach { arr.put(JSONObject(ImportExport.exportCharacterCard(it))) } }).toString()
-            "worlds" -> JSONObject().put("worlds", JSONArray().also { arr ->
-                WorldTreeStore.all(context).forEach { arr.put(JSONObject(ImportExport.exportWorldBook(it.name, it.description, it.content))) } }).toString()
             "memories" -> ImportExport.exportMemories(context, null)
             "conversations" -> JSONObject().put("conversations", JSONArray().also { arr ->
                 (db.conversationDao().getActiveSummaries().first() + db.conversationDao().getArchivedSummaries().first())
@@ -306,7 +302,7 @@ object GitHubBackup {
 
     private fun countOf(block: String, json: String): Int = try {
         val o = JSONObject(json)
-        val key = when (block) { "configs" -> "configs"; "cards" -> "cards"; "worlds" -> "worlds"; "conversations" -> "conversations"; else -> "memories" }
+        val key = when (block) { "configs" -> "configs"; "conversations" -> "conversations"; else -> "memories" }
         o.optJSONArray(key)?.length() ?: 0
     } catch (_: Exception) { 0 }
 
@@ -314,7 +310,7 @@ object GitHubBackup {
      * 把某个分块的云端 JSON 合并进本地，返回新增条数。
      * 幂等：按自然键跳过本地已存在的（configs=名+地址+模型+用途 / cards、worlds=名 / conversations=标题+条数），
      * 反复恢复不会翻倍。memories 走 upsertByTitle 天然按标题合并。
-     * 注：分块是【文本数据】；角色卡头像、附件等文件不在内（那些走整包备份）。
+     * 注：分块是【文本数据】；附件等文件不在内（那些走整包备份）。
      */
     private suspend fun importBlock(context: Context, block: String, json: String): Int {
         val db = AppDatabase.getInstance(context)
@@ -323,14 +319,6 @@ object GitHubBackup {
                 val seen = db.apiConfigDao().getAll().first()
                     .map { "${it.name}|${it.baseUrl}|${it.model}|${it.purpose}" }.toHashSet()
                 loopImportDedup(json, "configs", { "${it.optString("name")}|${it.optString("baseUrl", it.optString("base_url"))}|${it.optString("model")}|${it.optString("purpose", "chat")}" }, seen) { ImportExport.importConfig(it, context) }
-            }
-            "cards" -> {
-                val seen = db.characterCardDao().getAll().first().map { it.name }.toHashSet()
-                loopImportDedup(json, "cards", { it.optString("name") }, seen) { ImportExport.importCharacterCard(it, context) }
-            }
-            "worlds" -> {
-                val seen = WorldTreeStore.all(context).map { it.name }.toHashSet()
-                loopImportDedup(json, "worlds", { it.optString("name") }, seen) { ImportExport.importWorldBook(it, context) }
             }
             "conversations" -> {
                 val seen = (db.conversationDao().getActiveSummaries().first() + db.conversationDao().getArchivedSummaries().first()).map { it.title }.toHashSet()

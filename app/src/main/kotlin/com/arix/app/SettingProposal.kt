@@ -35,7 +35,6 @@ object SettingApplier {
         "auto_hide_bars" to Entry("滚动自动隐藏顶栏/输入栏", { ConfigModePrefs.autoHideBars(it).toString() }, { c, v -> ConfigModePrefs.setAutoHideBars(c, v.toBoolean()) }),
         "auto_memory" to Entry("对话后自动记忆", { ConfigModePrefs.autoExtractMemory(it).toString() }, { c, v -> ConfigModePrefs.setAutoExtractMemory(c, v.toBoolean()) }),
         "ugc_search" to Entry("突破UGC盲区(社区搜索)", { SearchApiPrefs.ugcEnabled(it).toString() }, { c, v -> SearchApiPrefs.setUgcEnabled(c, v.toBoolean()) }),
-        "state_card" to Entry("交互状态层(状态卡)", { InteractionState.isEnabled(it).toString() }, { c, v -> InteractionState.setEnabled(c, v.toBoolean()) }),
         "context_compress" to Entry("长对话自动压缩上下文", { ConfigModePrefs.contextCompress(it).toString() }, { c, v -> ConfigModePrefs.setContextCompress(c, v.toBoolean()) }),
         "enter_to_send" to Entry("回车发送", { ConfigModePrefs.enterToSend(it).toString() }, { c, v -> ConfigModePrefs.setEnterToSend(c, v.toBoolean()) }),
         "tools_enabled" to Entry("允许 AI 调用工具", { ConfigModePrefs.toolsEnabled(it).toString() }, { c, v -> ConfigModePrefs.setToolsEnabled(c, v.toBoolean()) }),

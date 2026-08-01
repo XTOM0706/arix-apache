@@ -9,60 +9,6 @@ import java.io.File
 // 增强对话工具 — 移植自 Operit
 // ============================================================
 
-// 世界书 — 世界设定管理（落库持久化，重启不丢）
-class WorldBookTool(private val context: Context) : Tool {
-    override val name = "worldbook"
-    override val description = "管理世界设定/角色背景/故事设定。用于角色扮演和叙事场景。"
-
-    override val parameters = JSONObject().apply {
-        put("type", "object")
-        put("properties", JSONObject().apply {
-            put("action", JSONObject().apply {
-                put("type", "string")
-                put("enum", JSONArray(listOf("set", "get", "list")))
-                put("description", "set=设置世界设定, get=获取设定, list=列出所有")
-            })
-            put("key", JSONObject().apply {
-                put("type", "string")
-                put("description", "设定名称，如 '世界观'、'角色背景'")
-            })
-            put("value", JSONObject().apply {
-                put("type", "string")
-                put("description", "设定内容（action=set时需要）")
-            })
-        })
-        put("required", JSONArray(listOf("action")))
-    }
-
-    private val file get() = File(context.filesDir, "worldbook.json")
-    private fun load(): JSONObject = try { if (file.exists()) JSONObject(file.readText()) else JSONObject() } catch (_: Exception) { JSONObject() }
-    private fun save(obj: JSONObject) { try { file.writeText(obj.toString()) } catch (_: Exception) {} }
-
-    override suspend fun execute(params: JSONObject): ToolResult {
-        val action = params.optString("action")
-        val entries = load()
-        return when (action) {
-            "set" -> {
-                val key = params.optString("key", "").take(80)
-                val value = params.optString("value", "").take(500)
-                if (key.isBlank()) return ToolResult("请提供设定名称", isError = true)
-                entries.put(key, value); save(entries)
-                ToolResult("世界设定已保存: $key")
-            }
-            "get" -> {
-                val key = params.optString("key", "")
-                if (entries.has(key)) ToolResult("$key: ${entries.optString(key)}")
-                else ToolResult("未找到设定: $key")
-            }
-            "list" -> {
-                if (entries.length() == 0) ToolResult("暂无世界设定")
-                else ToolResult(entries.keys().asSequence().joinToString("\n") { "$it: ${entries.optString(it).take(80)}" })
-            }
-            else -> ToolResult("未知操作", isError = true)
-        }
-    }
-}
-
 // 文件转换 — 格式转换
 class FileConverterTool(private val context: Context) : Tool {
     override val name = "file_converter"

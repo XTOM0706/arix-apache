@@ -438,9 +438,7 @@ import androidx.compose.ui.unit.IntOffset
      LaunchedEffect(openConvId) { if (openConvId != null) { pendingConversationId = openConvId; conversationKey++; currentPage = "chat" } }
      // 通知/快捷入口点开指定页面（如「检查更新」）：openPageParam 变化即路由
      LaunchedEffect(openPageParam) { if (openPageParam != null) navTo(openPageParam!!) }
-     var showCardSelector by remember { mutableStateOf(false) }
      var showModelSwitcher by remember { mutableStateOf(false) }
-     var showCardSwitcher by remember { mutableStateOf(false) }
     // 主页更新弹窗：UpdateNotifier 查到新版本且 App 在前台时把 release 塞进 UpdatePrompt.pending，
     // 这里观察变化弹窗。用户「稍后」= 记 postponeUntil 冷却；「更新」= 直接下载安装。
     if (UpdatePrompt.pending.value != null) {
@@ -453,8 +451,8 @@ import androidx.compose.ui.unit.IntOffset
             },
         )
     }
-     // 桌面 widget「开始新对话」：回到聊天页并弹角色卡选择，等价顶栏「+」
-     LaunchedEffect(newChatTrigger) { if (newChatTrigger > 0) { currentPage = "chat"; showCardSelector = true } }
+     // 桌面 widget「开始新对话」：回到聊天页并开一个新对话，等价顶栏「+」
+     LaunchedEffect(newChatTrigger) { if (newChatTrigger > 0) { currentPage = "chat"; pendingConversationId = null; conversationKey++ } }
      // 分享面板 / 划词进来：先把人送到聊天页（内容由聊天页从 ShareIntake 取走）。
      // 不弹角色卡选择——用户是带着一段内容来的，让他先接着当前这段对话说，别拿个选择框拦在中间。
      LaunchedEffect(shareTrigger) { if (shareTrigger > 0) currentPage = "chat" }
@@ -469,8 +467,6 @@ import androidx.compose.ui.unit.IntOffset
      }
      var chatSearchActive by remember { mutableStateOf(false) }
      var chatBarsVisible by remember { mutableStateOf(true) }  // 聊天页顶栏随滚动自动隐藏
-     val cardManager = remember { CharacterCardManager(context) }
-     val cards by cardManager.allCards.collectAsState(initial = emptyList())
      // 当前对话模型（顶栏小椭圆显示）
      val topConfigManager = remember { CloudApiConfigManager(context) }
      val topConfigs by topConfigManager.allConfigs.collectAsState(initial = emptyList())
@@ -524,12 +520,10 @@ import androidx.compose.ui.unit.IntOffset
          fun nav(id: String, icon: ImageVector, label: String, group: String) =
              DrawerEntryDef(id, icon, label, group, id) { navTo(id); scope.launch { drawerState.close() } }
          listOf(
-             nav("cards", Icons.Outlined.Style, "角色卡", "常用"),
              nav("files", Icons.Outlined.Folder, "文件", "常用"),
-             nav("worldtree", Icons.Outlined.Public, "世界书", "常用"),
              nav("memory", Icons.Outlined.Psychology, "记忆", "常用"),
              nav("browser", Icons.Outlined.Language, "浏览器", "常用"),
-             DrawerEntryDef("newchat", Icons.AutoMirrored.Outlined.Chat, "聊天", "常用", null) { showCardSelector = true; scope.launch { drawerState.close() } },
+             DrawerEntryDef("newchat", Icons.AutoMirrored.Outlined.Chat, "聊天", "常用", null) { pendingConversationId = null; conversationKey++; currentPage = "chat"; scope.launch { drawerState.close() } },
              DrawerEntryDef("settings", Icons.Outlined.Settings, "设置", "常用", "settings_hub") { navTo("settings_hub"); scope.launch { drawerState.close() } },
              nav("personalization", Icons.Outlined.Palette, "个性化", "个性化"),
              nav("config", Icons.Outlined.Settings, "模型配置", "对话与模型"),
@@ -595,14 +589,12 @@ import androidx.compose.ui.unit.IntOffset
                      }
                  }
                  HorizontalDivider(color = scheme.outlineVariant)
-                 val grouped = remember(activeConvs, cards) {
+                 val grouped = remember(activeConvs) {
                      val now = System.currentTimeMillis()
                      val cal = java.util.Calendar.getInstance().apply { timeInMillis = now; set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0) }
                      val todayStart = cal.timeInMillis
                      val order = listOf("今天", "昨天", "近7天", "更早")
-                     // 只显示与「当前选中(默认)角色卡」的对话
-                     val defId = cards.firstOrNull { it.isDefault }?.id
-                     val m = activeConvs.filter { it.characterCardId == defId }.sortedByDescending { it.updatedAt }.groupBy { c ->
+                     val m = activeConvs.sortedByDescending { it.updatedAt }.groupBy { c ->
                          when { c.updatedAt >= todayStart -> "今天"; c.updatedAt >= todayStart - 86400000L -> "昨天"; c.updatedAt >= todayStart - 6 * 86400000L -> "近7天"; else -> "更早" }
                      }
                      order.mapNotNull { k -> m[k]?.let { k to it } }
@@ -628,16 +620,12 @@ import androidx.compose.ui.unit.IntOffset
                          }
                      }
                      item(key = "curcard") {
-                         // 当前角色卡 + 绑定的世界书（对话按此角色过滤）
-                         val curCard = cards.firstOrNull { it.isDefault }
-                         val boundBook = curCard?.id?.let { WorldTreeStore.boundTreeId(context, it)?.let { tid -> WorldTreeStore.get(context, tid)?.name } }
                          Column {
                              Row(modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 12.dp, top = 8.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                                  Icon(Icons.Outlined.Style, contentDescription = null, tint = scheme.primary, modifier = Modifier.size(15.dp))
                                  Spacer(Modifier.width(6.dp))
                                  Column(modifier = Modifier.weight(1f)) {
-                                     Text(curCard?.name ?: tr("通用助手"), color = scheme.onSurface, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                      Text(if (boundBook != null) tr("世界书：%s").format(boundBook) else tr("世界书：无"), color = if (boundBook != null) scheme.primary else scheme.onSurfaceVariant, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                     Text(tr("通用助手"), color = scheme.onSurface, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                  }
                              }
                              Text(tr("对话"), fontSize = 11.sp, color = scheme.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, top = 6.dp, bottom = 2.dp))
@@ -920,11 +908,6 @@ import androidx.compose.ui.unit.IntOffset
                              Box(modifier = Modifier.fillMaxWidth().then(barBgMod)) {
                                  Row(modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 16.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                                  CircleTopButton(Icons.Outlined.Segment, tr("菜单"), onClick = { scope.launch { drawerState.open() } })
-                                 // 当前角色卡（选中/默认）+ 模型。胶囊分两半，**各切各的**：
-                                 // 左半角色名→就地切角色卡，右半模型名→就地切模型。
-                                 // 两边都不再跳页——顶栏这颗胶囊显示的就是「当前是谁 + 用什么模型」，点它自然是换它，
-                                 // 而不是跳到一个管理页去（要管理走抽屉的「角色卡」）。
-                                 val curCard = cards.firstOrNull { it.isDefault }
                                  Spacer(Modifier.width(6.dp))
                                  // 玻璃开时胶囊半透明（原本就是半透明悬浮胶囊，别做成纯色）
                                  val pillGlass = com.arix.app.ui.LocalGlass.current.on
@@ -935,32 +918,24 @@ import androidx.compose.ui.unit.IntOffset
                                  // 同时这层 Box 顶掉了原来那个 Spacer(weight(1f))——它已经承担了「把圆钮推到最右」。
                                  Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                                  Surface(shape = RoundedCornerShape(50), color = if (pillGlass) scheme.surfaceContainerHighest.copy(alpha = 0.62f) else scheme.surfaceContainerHighest, border = androidx.compose.foundation.BorderStroke(1.dp, scheme.outlineVariant), shadowElevation = com.arix.app.ui.flatShadowElevation(4.dp), modifier = Modifier.height(38.dp)) {
-                                     Row(modifier = Modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
-                                         Row(modifier = Modifier.clickable { showCardSwitcher = true }.fillMaxHeight().padding(start = 12.dp, end = if (activeModel.isBlank()) 10.dp else 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                             // 名字过长走跑马灯滚动而不是省略号：角色卡/模型名的尾部往往才是
-                                             // 区分度所在（同系列模型只差个后缀），截掉等于看不出用的是哪个。
-                                             // 用自建 MarqueeText 而非 basicMarquee：后者走标准动画 API，手表「动画缩放=0」下不动。
-                                             // active 必须给：聊天页是常驻 composition（切到别的页面也不销毁，
-                                             // 只是不画），不门控的话跑马灯会在用户早就翻到别处时继续每帧推进——
-                                             // 一帧都不显示，纯烧表的电。Marquee 自己的注释也是这么写的。
-                                             com.arix.app.ui.MarqueeText(curCard?.name ?: tr("通用助手"), color = scheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, active = chatVisible, modifier = Modifier.widthIn(max = 96.dp))
-                                             Spacer(Modifier.width(3.dp))
-                                             Icon(Icons.Outlined.UnfoldMore, contentDescription = tr("切换角色卡"), tint = scheme.onSurfaceVariant, modifier = Modifier.size(13.dp))
-                                         }
-                                         if (activeModel.isNotBlank()) {
-                                             Box(modifier = Modifier.width(1.dp).fillMaxHeight().padding(vertical = 8.dp).background(scheme.outlineVariant))
-                                             Row(modifier = Modifier.clickable { showModelSwitcher = true }.fillMaxHeight().padding(start = 8.dp, end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                                 com.arix.app.ui.MarqueeText(activeModel, color = scheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, active = chatVisible, modifier = Modifier.widthIn(max = 86.dp))
-                                                 Spacer(Modifier.width(3.dp))
-                                                 Icon(Icons.Outlined.UnfoldMore, contentDescription = tr("切换模型"), tint = scheme.onSurfaceVariant, modifier = Modifier.size(13.dp))
-                                             }
-                                         }
-                                     }
+                                    Row(modifier = Modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
+                                        Row(modifier = Modifier.fillMaxHeight().padding(start = 12.dp, end = if (activeModel.isBlank()) 10.dp else 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            com.arix.app.ui.MarqueeText(tr("助手"), color = scheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, active = chatVisible, modifier = Modifier.widthIn(max = 96.dp))
+                                        }
+                                        if (activeModel.isNotBlank()) {
+                                            Box(modifier = Modifier.width(1.dp).fillMaxHeight().padding(vertical = 8.dp).background(scheme.outlineVariant))
+                                            Row(modifier = Modifier.clickable { showModelSwitcher = true }.fillMaxHeight().padding(start = 8.dp, end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                com.arix.app.ui.MarqueeText(activeModel, color = scheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, active = chatVisible, modifier = Modifier.widthIn(max = 86.dp))
+                                                Spacer(Modifier.width(3.dp))
+                                                Icon(Icons.Outlined.UnfoldMore, contentDescription = tr("切换模型"), tint = scheme.onSurfaceVariant, modifier = Modifier.size(13.dp))
+                                            }
+                                        }
+                                    }
                                  }
                                  }
                                  // 三个圆钮常态统一中性色；只有「搜索激活」这种状态才点缀成蓝，别常态就上色。
                                  CircleTopButton(Icons.Outlined.Search, tr("搜索当前对话"), tint = if (chatSearchActive) scheme.primary else scheme.onSurfaceVariant, onClick = { chatSearchActive = !chatSearchActive })
-                                 CircleTopButton(Icons.Outlined.Add, tr("新建对话"), onClick = { showCardSelector = true })
+                                 CircleTopButton(Icons.Outlined.Add, tr("新建对话"), onClick = { pendingConversationId = null; conversationKey++; currentPage = "chat" })
                              }
                              }
                          }
@@ -1041,7 +1016,6 @@ import androidx.compose.ui.unit.IntOffset
                          requestPerm = { permLauncher.launch(Manifest.permission.RECORD_AUDIO) })
                      "tts" -> TtsPage(scope = scope, context = context)
                      "voice_clone" -> VoiceClonePage(scope = scope, context = context, hasAudioPerm = hasAudioPerm, requestPerm = { permLauncher.launch(Manifest.permission.RECORD_AUDIO) })
-                     "cards" -> CharacterCardPage(scope = scope, context = context)
                      "settings" -> AppSettingsPage(context = context)
                      "personalization" -> PersonalizationPage(context = context)
                      "dialog_settings" -> DialogSettingsPage(context = context)
@@ -1074,7 +1048,6 @@ import androidx.compose.ui.unit.IntOffset
                       // 设置中心：搜索 + 分组卡片 + 长按人话说明
                       "settings_hub" -> SettingsHubPage { navTo(it) }
                       // 文件 / 项目：GPT 式入口
-                      "worldtree" -> WorldTreePage(scope = scope, context = context)
                       "files" -> FilesPage(context = context)
                       "file_history" -> FileHistoryPage(context = context)
                       "chat_appearance" -> ChatAppearancePage(context = context)
@@ -1118,94 +1091,6 @@ import androidx.compose.ui.unit.IntOffset
              )
          }
      }
-
-     // Character card selector dialog
-     if (showCardSelector) {
-         androidx.compose.material3.AlertDialog(
-             onDismissRequest = { showCardSelector = false },
-             title = { Text(tr("选择角色卡"), color = scheme.onSurface) },
-             text = {
-                 Column {
-                     Text(tr("新对话将绑定选中的角色卡"), color = scheme.onSurfaceVariant, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
-                     LazyColumn(modifier = Modifier.height(280.dp)) {
-                         items(cards.size, key = { cards[it].id }) { idx ->
-                             val card = cards[idx]
-                             Card(
-                                 modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                                 colors = CardDefaults.cardColors(containerColor = scheme.surfaceContainerHigh),
-                                 shape = MaterialTheme.shapes.medium,
-                                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                                 onClick = {
-                                     showCardSelector = false
-                                     scope.launch {
-                                         val convId = ConversationManager(context).create(
-                                             characterCardId = card.id, configId = null,
-                                              title = if (card.isDefault) tr("新对话") else tr("与 %s 的对话").format(card.name)
-                                         )
-                                         pendingConversationId = convId; conversationKey++; currentPage = "chat"
-                                     }
-                                 }
-                             ) {
-                                 Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                     Column(modifier = Modifier.weight(1f)) {
-                                         Text(card.name, color = scheme.onSurface, fontSize = 14.sp, fontWeight = if (card.isDefault) FontWeight.Normal else FontWeight.Medium)
-                                         if (card.description.isNotBlank()) Text(card.description, color = scheme.onSurfaceVariant, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                         if (card.isDefault) Text(tr("通用助手模式 · 无人设注入"), color = scheme.onSurfaceVariant, fontSize = 10.sp)
-                                     }
-                                     if (card.isDefault) Text(tr("默认"), color = scheme.primary, fontSize = 11.sp)
-                                 }
-                             }
-                         }
-                     }
-                 }
-             },
-             confirmButton = {},
-             dismissButton = { TextButton(onClick = { showCardSelector = false }) { Text(tr("取消"), color = scheme.onSurfaceVariant) } },
-             containerColor = scheme.surface, shape = MaterialTheme.shapes.extraLarge
-         )
-     } // end showCardSelector
-
-     // 快捷切换角色卡：点顶栏胶囊左半的角色名弹出。设为当前卡（= 角色卡页那个「✓ 当前」的同一件事），
-     // 不新建对话——新建走顶栏的 + 号。
-     if (showCardSwitcher) {
-         androidx.compose.material3.AlertDialog(
-             onDismissRequest = { showCardSwitcher = false },
-             title = { Text(tr("切换角色卡"), color = scheme.onSurface) },
-             text = {
-                 Column {
-                     Text(tr("切换后当前对话与新对话都用选中的角色卡"), color = scheme.onSurfaceVariant, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
-                     LazyColumn(modifier = Modifier.heightIn(max = 280.dp)) {
-                         items(cards.size, key = { cards[it].id }) { idx ->
-                             val card = cards[idx]
-                             Card(
-                                 modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                                 colors = CardDefaults.cardColors(containerColor = if (card.isDefault) scheme.primaryContainer else scheme.surfaceContainerHigh),
-                                 shape = MaterialTheme.shapes.medium,
-                                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                                 onClick = {
-                                     showCardSwitcher = false
-                                     scope.launch { cardManager.setDefault(card.id) }
-                                 },
-                             ) {
-                                 Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                     Column(modifier = Modifier.weight(1f)) {
-                                         Text(card.name, color = if (card.isDefault) scheme.onPrimaryContainer else scheme.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                         if (card.description.isNotBlank()) Text(card.description, color = if (card.isDefault) scheme.onPrimaryContainer else scheme.onSurfaceVariant, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                     }
-                                     if (card.isDefault) Icon(Icons.Outlined.Check, contentDescription = tr("使用中"), tint = scheme.onPrimaryContainer, modifier = Modifier.size(18.dp))
-                                 }
-                             }
-                         }
-                     }
-                 }
-             },
-             confirmButton = {
-                 TextButton(onClick = { showCardSwitcher = false; navTo("cards") }) { Text(tr("管理角色卡"), color = scheme.primary) }
-             },
-             dismissButton = { TextButton(onClick = { showCardSwitcher = false }) { Text(tr("取消"), color = scheme.onSurfaceVariant) } },
-             containerColor = scheme.surface, shape = MaterialTheme.shapes.extraLarge
-         )
-     } // end showCardSwitcher
 
      // 快捷切换对话模型：点顶栏胶囊右半的模型名弹出。只列「对话」用途的配置——
      // 其余用途（视觉/向量/翻译…）各有各的激活项，在这儿切会把它们的配置搅乱。
@@ -1474,7 +1359,7 @@ import androidx.compose.ui.unit.IntOffset
  // ============================================================
  /** 页面 → 顶部标题。走 tr() 过 33 语言译表；不要 remember 它，静态 local 换语言时要能重算。 */
  private fun pageTitle(page: String): String = when (page) {
-     "config" -> tr("模型配置"); "stt" -> tr("语音识别"); "tts" -> tr("语音朗读"); "voice_clone" -> tr("声音克隆"); "conversations" -> tr("对话管理"); "cards" -> tr("角色卡")
+     "config" -> tr("模型配置"); "stt" -> tr("语音识别"); "tts" -> tr("语音朗读"); "voice_clone" -> tr("声音克隆"); "conversations" -> tr("对话管理")
      "memory" -> tr("记忆管理"); "packages" -> tr("本地包"); "operit" -> tr("云端市场"); "wake" -> tr("语音唤醒")
      "permissions" -> tr("权限管理"); "plugins" -> tr("插件制作"); "import" -> tr("导入导出"); "terminal" -> tr("终端")
      "monitor" -> tr("监控 & 风控"); "activity_center" -> tr("AI 活动中心"); "crash" -> tr("崩溃报告"); "settings" -> tr("应用设置"); "personalization" -> tr("个性化"); "dialog_settings" -> tr("对话设置"); "tool_keys" -> tr("工具密钥"); "search_settings" -> tr("联网搜索"); "settings_hub" -> tr("设置"); "about" -> tr("关于软件"); "favorites" -> tr("收藏"); "files" -> tr("文件"); "file_history" -> tr("文件改动历史"); "chat_appearance" -> tr("聊天外观"); "projects" -> tr("项目"); "usage" -> tr("使用统计"); "user_scripts" -> tr("用户脚本")

@@ -91,11 +91,9 @@ import java.util.Locale
 @Composable
 fun ConversationListScreen(scope: kotlinx.coroutines.CoroutineScope, context: android.content.Context, onSelectConversation: (Long) -> Unit) {
     val convManager = remember { ConversationManager(context) }
-    val cardManager = remember { CharacterCardManager(context) }
     // 轻量投影流：只拉元数据，不含 messagesJson/branchesJson。大对话不会撑爆 2MB 游标窗口（曾致启动崩溃）。
     val activeConvs by convManager.repo.activeSummaries.collectAsState(initial = emptyList())
     val archivedConvs by convManager.repo.archivedSummaries.collectAsState(initial = emptyList())
-    val cards by cardManager.allCards.collectAsState(initial = emptyList())
     var showArchived by remember { mutableStateOf(false) }
     var renamingId by remember { mutableStateOf<Long?>(null) }
     var renameText by remember { mutableStateOf("") }
@@ -111,9 +109,6 @@ fun ConversationListScreen(scope: kotlinx.coroutines.CoroutineScope, context: an
     // 不 remember 的话每次任意 state 变（切多选/开菜单）都要 map+filter+distinct+sorted 整份重扫。
     val folders = remember(baseList) { baseList.map { it.folder }.filter { it.isNotBlank() }.distinct().sorted() }
     val hasUnfiled = remember(baseList) { baseList.any { it.folder.isBlank() } }
-    // 角色卡 id→卡 映射记忆化：原来每个可见行 cards.find{} 是 O(卡数) 线性扫，行数×卡数每帧白算；
-    // 换 associateBy 后行内查为 O(1)（对齐聊天页「每项非记忆化成本」治法）。
-    val cardsById = remember(cards) { cards.associateBy { it.id } }
     // 选中的文件夹被清空后回退到「全部」，避免筛出空列表卡住
     if (folderFilter != null && folderFilter != "__none__" && folderFilter !in folders) folderFilter = null
     val conversations = remember(baseList, folderFilter) {
@@ -227,7 +222,6 @@ fun ConversationListScreen(scope: kotlinx.coroutines.CoroutineScope, context: an
             LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 items(conversations.size, key = { conversations[it].id }, contentType = { "conv" }) { idx ->
                     val conv = conversations[idx]
-                    val card = cardsById[conv.characterCardId]
                     val selected = conv.id in selectedIds
                     // 多选态下不进重命名态：那时 trailing 让位给勾选，确定/取消无处可放，会留下一个改不完也退不出的输入框
                     val renaming = renamingId == conv.id && !selectionMode
@@ -357,14 +351,13 @@ fun ConversationListScreen(scope: kotlinx.coroutines.CoroutineScope, context: an
                             },
                             supportingContent = {
                                 Column {
-                                    if (conv.folder.isNotBlank() || card != null) {
+                                    if (conv.folder.isNotBlank()) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             if (conv.folder.isNotBlank()) {
                                                 Icon(Icons.Outlined.Folder, contentDescription = tr("文件夹"), tint = scheme.tertiary, modifier = Modifier.size(12.dp))
                                                 Spacer(Modifier.width(2.dp))
                                                 Text(conv.folder, color = scheme.tertiary, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(end = 6.dp))
                                             }
-                                            if (card != null) Text(card.name, color = scheme.primary, style = MaterialTheme.typography.labelSmall)
                                         }
                                     }
                                     // 时间 + 该对话累计用量/花费并成一行小字：原来它们各占一行，把卡片撑高了一截却没多说什么

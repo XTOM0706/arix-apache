@@ -453,9 +453,7 @@ private fun fmtFileSize(b: Long): String = when {
                 modifier = if (showCursor) Modifier.animateContentSize(animationSpec = tween(180, easing = FastOutSlowInEasing)) else Modifier,
             ) {
                 val rawBody = bubble.text.takeUnless { it == "null" } ?: " "
-                // 角色卡「显示替换规则」：仅对完成后的 AI 文本按正则替换显示（不改存储，不碰流式/树）。
-                // remember 记忆化：同一段文本只跑一次正则，别每次重组/滚动都重跑（省 CPU、缩小坏正则卡 UI 的窗口）。
-                val bodyText = if (showCursor) rawBody else remember(rawBody, isUser) { com.arix.app.CardRoleplayStore.applyDisplay(rawBody, isUser) }
+                val bodyText = rawBody
                 // 走同一个解析函数而不是再写一遍 if(isUser)：自定义底色时的可读性兜底在那里，
                 // 这里若各算各的，Markdown 正文就会和气泡里其它文字不是一个颜色
                 val bodyColor = resolveBubbleTextColor(style, isUser)

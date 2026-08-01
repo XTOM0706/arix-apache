@@ -29,11 +29,8 @@ class ConversationRepository(
 
     // 分列拼装，绕开单行 >2MB 的 CursorWindow 上限（长对话+分支树能到 2MB+）。
     // ⚠ 只要一两个元数据字段就别走这个：它会把 messagesJson/branchesJson 分块读回来。
-    // 要角色卡用 [cardIdOf]、要元数据用 [getSummaryById]、要分支树用 [getBranchesJson]。
+    // 要元数据用 [getSummaryById]、要分支树用 [getBranchesJson]。
     suspend fun getById(id: Long): ConversationEntity? = convDao.getByIdAssembled(id)
-
-    /** 只取这条会话绑的角色卡 id（每轮回复收尾都要问一次，别为它拼整份会话）。 */
-    suspend fun cardIdOf(id: Long): Long? = convDao.cardIdOf(id)
 
     /** 只取元数据投影（标题/时间/归档位…），不含两个大列。 */
     suspend fun getSummaryById(id: Long): ConversationSummary? = convDao.getSummaryById(id)
@@ -73,8 +70,6 @@ class ConversationRepository(
     suspend fun setLocked(id: Long, locked: Boolean) = convDao.setLocked(id, locked)
 
     suspend fun setTitle(id: Long, title: String) = convDao.setTitle(id, title)
-
-    suspend fun setCharacterCard(id: Long, characterCardId: Long) = convDao.setCharacterCard(id, characterCardId)
 
     suspend fun setFolder(id: Long, folder: String) = convDao.setFolder(id, folder)
 

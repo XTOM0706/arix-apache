@@ -9,12 +9,6 @@ import androidx.room.PrimaryKey
     tableName = "conversations",
     foreignKeys = [
         ForeignKey(
-            entity = CharacterCardEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["characterCardId"],
-            onDelete = ForeignKey.SET_NULL
-        ),
-        ForeignKey(
             entity = ApiConfigEntity::class,
             parentColumns = ["id"],
             childColumns = ["configId"],
@@ -22,13 +16,11 @@ import androidx.room.PrimaryKey
         )
     ],
     indices = [
-        Index("characterCardId"),
         Index("configId")
     ]
 )
 data class ConversationEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val characterCardId: Long? = null,
     val configId: Long? = null,
     val title: String = "新对话",
     val messagesJson: String = "[]",

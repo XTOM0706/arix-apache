@@ -527,11 +527,10 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
       */
      visible: Boolean = true,
  ) {
-     val configManager = remember { CloudApiConfigManager(context) }
-     val cardManager = remember { CharacterCardManager(context) }
-     val ttsTool = remember { TtsTool(context) }
-     DisposableEffect(Unit) { onDispose { ttsTool.shutdown() } }
-     val configs by configManager.allConfigs.collectAsState(initial = emptyList())
+    val configManager = remember { CloudApiConfigManager(context) }
+    val ttsTool = remember { TtsTool(context) }
+    DisposableEffect(Unit) { onDispose { ttsTool.shutdown() } }
+    val configs by configManager.allConfigs.collectAsState(initial = emptyList())
      // 聊天行为开关（每对话绑定模型/分叉/重生成/拆气泡/接分享）。一次读、往下发（经 LocalChatBehavior）。
      // key 挂 visible：聊天页是常驻 composition，从设置页回来不会重建，不重读就一直是旧配置。
      val behavior = remember(visible) { ChatBehaviorPrefs.snapshot(context) }
@@ -557,22 +556,14 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
      val clipboard = LocalClipboardManager.current
      var modelPickerOpen by remember { mutableStateOf(false) }   // 「本对话模型」选择弹窗（+ 菜单进入）
 
-     var systemPrompt by remember(active) { mutableStateOf(active?.systemPrompt ?: "") }
-     var projectInstruction by remember { mutableStateOf("") }   // 本对话所属「项目」的项目指令（folder→ProjectStore），随对话加载
-     var convId by remember { mutableStateOf(conversationId) }
-     var boundCardName by remember { mutableStateOf<String?>(null) }
-     var boundCardId by remember { mutableStateOf<Long?>(null) }
-     var continuationText by remember { mutableStateOf<String?>(null) }  // 跨对话续接注入(开新对话带上次)
-     var identity by remember { mutableStateOf(ChatIdentity()) }
-     var characterSetting by remember { mutableStateOf("") }
-     var worldBook by remember { mutableStateOf("") }
-     // 世界书整本存着，注入时**按条求值**（每条各有触发词/注入位/深度/顺序/常驻）。
-     // 原来这里是四个平铺 state（content/keywords/position/depth），那等于"一本书一组设置"——
-     // 导入一张带 50 条 lorebook 的酒馆卡，50 条各自的触发词和深度全被压平成一坨无条件常驻文本。
-     var worldTree by remember { mutableStateOf<WorldTreeStore.Tree?>(null) }
-     var cardPrefsPrompt by remember { mutableStateOf("") }
-     var waifuEnabled by remember { mutableStateOf(false) }
-     var waifuDelayMs by remember { mutableStateOf(250) }
+    var systemPrompt by remember(active) { mutableStateOf(active?.systemPrompt ?: "") }
+    var projectInstruction by remember { mutableStateOf("") }   // 本对话所属「项目」的项目指令（folder→ProjectStore），随对话加载
+    var convId by remember { mutableStateOf(conversationId) }
+    var continuationText by remember { mutableStateOf<String?>(null) }  // 跨对话续接注入(开新对话带上次)
+    var identity by remember { mutableStateOf(ChatIdentity()) }
+    var characterSetting by remember { mutableStateOf(com.arix.app.AssistantRolePrefs.characterSetting(context)) }
+    var worldBook by remember { mutableStateOf("") }
+    var cardPrefsPrompt by remember { mutableStateOf("") }
  
      val chatBubbles = remember { mutableStateListOf<ChatBubble>() }
      val conversationMsgs = remember { mutableStateListOf<ChatMessage>() }
@@ -613,8 +604,7 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
     // AI 工具调用循环：把已注册工具喂给模型，解析 tool_calls，执行后回灌，循环直到无工具调用或达上限。
     // 从崩溃前 opencode.db 快照恢复的原始实现，适配当前单例 ToolManager。
     suspend fun runWithToolLoop(client: CloudApiClient, msgs: MutableList<ChatMessage>,
-                                sysPromptIn: String?, enk: Int, images: List<String>?,
-                                wbDepths: List<WorldTreeStore.DepthChunk> = emptyList()): Pair<String, CloudApiClient.StreamResult> {
+                                sysPromptIn: String?, enk: Int, images: List<String>?): Pair<String, CloudApiClient.StreamResult> {
         // Operit 框架包钩子（此处是两条发送链的唯一汇合点，一处覆盖 performSend + pendingAutoSend）：
         // ① systemPromptCompose：把系统提示穿过钩子改写；② promptInput：把本轮用户输入穿过钩子改写（改写会持久化，仿 Operit）。
         // 没人注册对应钩子时零成本原样返回（hasHook 短路），不拖慢主链路。
@@ -630,53 +620,6 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
             msgs.takeLast(20).forEach { hist.put(org.json.JSONObject().put("role", it.role).put("content", it.content)) }
             val handled = com.arix.tool.OperitFramework.processMessage(lastUser, hist.toString())
             if (!handled.isNullOrBlank()) return Pair(handled, CloudApiClient.StreamResult(handled, null, 200, null))
-        }
-        // 世界书按深度注入（酒馆式）：把世界书正文并进「倒数第 wbDepthAt 个用户回合」的开头。
-        // 按 user 消息计数（不数 assistant/tool），所以：① 永远落在真实用户回合、绝不并进工具轮的 tool 结果或 assistant(tool_calls) 上；
-        // ② 工具循环里只追加 assistant/tool、user 不变 → 每轮命中的都是同一条 user 消息，位置稳定不漂移。
-        // 只作用于发送用的临时列表，data class copy 不改持久化 msgs / 不新增消息 / 不动角色与配对（避免严格 provider 对中间 system 报 400）。
-        // ⚠ 现在是**多段**：每条世界书条目可以有自己的深度，同一轮可能要往好几个位置插。
-        // [wbDepths] 已按深度**降序**排好——多个深度落到同一条 user 上时，先插深的读起来才对。
-        // 落点算法与从前逐字相同，只是从「一段」变成「循环插多段」。
-        fun injectWbDepth(list: List<ChatMessage>): List<ChatMessage> {
-            if (wbDepths.isEmpty() || list.isEmpty()) return list
-            val out = ArrayList(list)
-            for ((d, text) in wbDepths) {
-                if (text.isBlank() || d <= 0) continue
-                var seen = 0; var target = -1
-                for (i in out.indices.reversed()) if (out[i].role == "user") { seen++; if (seen >= d) { target = i; break } }
-                if (target < 0) target = out.indexOfFirst { it.role == "user" }   // 用户回合不足 N：落到最早的 user
-                if (target < 0) continue                                          // 没有 user 消息（异常）→ 这一段不注入
-                out[target] = out[target].copy(content = "【世界书】\n" + text.trim() + "\n\n" + out[target].content)
-            }
-            return out
-        }
-
-        /**
-         * 角色卡的两段「按位置插」的提示词。和上面世界书那条是**不同的机制**，所以另写一个函数：
-         *
-         *  · **越狱指令**（酒馆卡的 `post_history_instructions`）：它的语义就是「插在整段历史**之后**」——
-         *    位置本身就是它的权重来源。并进 sysPrompt 会让它退化成一句普通系统提示（权重没了），
-         *    还会污染提示缓存的静态前缀（见本文件 staticSys 那段注释）。所以必须放在这里、放在最后。
-         *  · **深度提示**（depth prompt）：作为**独立一条消息**插到倒数第 N 条，带自己的角色
-         *    （system/user/assistant）。世界书那条是「把文本前缀进某条已有的 user 消息」，
-         *    插法根本不同，别想着合并成一个函数。
-         *
-         * 深度按**全部消息**计数（酒馆的口径），而不是像世界书那样只数 user 回合：世界书要落在某条
-         * user 身上所以得数 user，而这一条自己就是一条消息，没有「落在谁身上」的问题。
-         */
-        fun injectCardExtras(list: List<ChatMessage>): List<ChatMessage> {
-            val dp = CardRoleplayStore.depthPrompt(context, boundCardId)
-            val phi = CardRoleplayStore.postHistoryInstructions(context, boundCardId)
-            if (dp == null && phi.isBlank()) return list
-            val out = ArrayList(list)
-            dp?.let {
-                val idx = (out.size - it.depth).coerceIn(0, out.size)
-                out.add(idx, ChatMessage(it.role, it.text))
-            }
-            // 必须**最后**加：先加深度提示的话，这一条就被顶到中间去了，位置语义随之失效
-            if (phi.isNotBlank()) out.add(ChatMessage("system", phi))
-            return out
         }
         // 不限轮数：模型要调几轮工具就调几轮，直到它自己给出结论；用户随时可 STOP。
         // 之前写死 maxRounds=5——第 5 轮还在调工具就被**静默掐断**，再去掉 tools 逼它「就现有结果作答」。
@@ -726,11 +669,11 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
                     chatBubbles.add(ChatBubble("user", t))
                 }
             }
-            // 工具表按**这张角色卡的范围**裁（陪伴卡不带 shell/文件/工作流，干活卡不带日记/音乐；见 CardToolStore）。
-            // 每轮现读：编辑器里刚改完范围，下一轮就生效，不用重进对话。
-            val tools = if (toolsEnabled) com.arix.tool.ToolManager.getToolsJson(CardToolStore.excluded(context, boundCardId)) else org.json.JSONArray()
+            // 工具表：直接下发全部启用工具（角色卡工具范围已随角色卡体系移除）。
+            // 每轮现读：设置里刚改完启用/禁用，下一轮就生效。
+            val tools = if (toolsEnabled) com.arix.tool.ToolManager.getToolsJson() else org.json.JSONArray()
             // 长对话把早期消息换成「前情摘要」再发（省 token / 不撞上限）；msgs 本身仍是完整历史
-            val sendMsgs = injectCardExtras(injectWbDepth(com.arix.app.ContextCompressor.forSend(context, convId, msgs)))
+            val sendMsgs = com.arix.app.ContextCompressor.forSend(context, convId, msgs)
             val result = client.streamChat(sendMsgs, sysPrompt, enk, images,
                 tools = if (tools.length() > 0) tools else null,
                 onReasoningChunk = { r -> streaming.reasoning += r },
@@ -845,13 +788,11 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
                         // 失败沉淀成教训：这些信号本来产生完就扔了，现在让它变成下一次的上下文（见 LessonRecorder）。
                         // 后台跑、不阻塞本轮；失败静默。
                         LessonRecorder.kindOf(r.failKind)?.let { k ->
-                            scope.launch { LessonRecorder.record(context, boundCardId, k, tc.name, r.content) }
+                            scope.launch { LessonRecorder.record(context, null, k, tc.name, r.content) }
                         }
                         // 超长结果落盘 + 只内联头尾（答案常在尾部，原来只 take(3000) 等于把尾巴丢了）。见 ToolOutputStore。
-                        // 传角色卡的排除表：判「结果落盘后模型读不读得回来」时，要连"这张卡不带文档工具"也算上。
-                        // 打转提醒不在这里拼——它只该进给模型的那条消息，不进用户看得见的气泡（见下方入列处）。
                         Pair(com.arix.tool.ToolOutputStore.forModel(
-                            context, tc.name, r.content, CardToolStore.excluded(context, boundCardId)), r.userDenied)
+                            context, tc.name, r.content), r.userDenied)
                     } catch (e: kotlinx.coroutines.CancellationException) {
                         // ⚠ 取消要分两种，原来一律 `throw e` 把它们混为一谈了：
                         //   ① 用户按了 STOP → **本轮该结束**，必须原样往上抛（不抛就是「停不掉」）。
@@ -872,7 +813,7 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
                     toolCallStatus = tr("回复被截断，请模型重发…")
                     // 截断也是教训：同一个工具反复在长度上限处被切，说明它总想一次塞太多，值得记住
                     toolCallMsgs.firstOrNull()?.let { tc ->
-                        scope.launch { LessonRecorder.record(context, boundCardId, LessonRecorder.Kind.TRUNCATED, tc.name) }
+                        scope.launch { LessonRecorder.record(context, null, LessonRecorder.Kind.TRUNCATED, tc.name) }
                     }
                 }
                 // ⚠ tool 消息照常全部入列：OpenAI 协议要求每个 tool_call_id 都要有配对结果，
@@ -906,7 +847,7 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
         if (lastContent.isBlank() && lastResult?.error == null && !deniedStop) {
             streaming.content = ""; streaming.reasoning = ""
             toolCallStatus = tr("整理结果中…")
-            val finalResult = client.streamChat(injectCardExtras(injectWbDepth(com.arix.app.ContextCompressor.forSend(context, convId, msgs))), sysPrompt, enk, images,
+            val finalResult = client.streamChat(com.arix.app.ContextCompressor.forSend(context, convId, msgs), sysPrompt, enk, images,
                 tools = null,
                 onReasoningChunk = { r -> streaming.reasoning += r },
                 onContentChunk = { c -> streaming.content += c })
@@ -963,8 +904,6 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
     // 「转发到…」选中的那条。非空即显示选目标会话的弹窗（见 ForwardMessageDialog）；
     // 不另设 show 标志位——一个可空状态就够表达「有没有在转发」，两个状态量迟早对不上。
     var forwardBubble by remember { mutableStateOf<ChatBubble?>(null) }
-    /** 角色卡的多条候选开场白；非空即弹「挑一条」。null = 没在挑。 */
-    var greetingChoices by remember { mutableStateOf<List<String>?>(null) }
     // 选段复制：非空即打开整屏选字页。只存**文本**不存气泡对象——这样它不会把一条已被删除/回滚掉的
     // 消息连同 usage/分支等一堆状态一起吊在这里（弹窗只需要正文）。
     var selectTextTarget by remember { mutableStateOf<String?>(null) }
@@ -1044,12 +983,8 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
      var turnCount by remember { mutableStateOf(0) }
      // 动态输入提示：空闲时轮换的友好占位（占位“自主变化”）+ AI 生成的下一句建议（可点填入）
      val suggestions = remember { mutableStateListOf<String>() }   // AI 生成的多条「下一句」追问建议，可点填入输入框
-     // 状态卡情绪徽章（借鉴 Moodlet）：把 InteractionState 的 closing_mood/energy 显式渲染成聊天顶部一枚可一眼看到的小卡。
-     // 仅在状态卡实验开关开启且有数据时出现；默认关 → 不改现有体验。
-     var moodBadge by remember { mutableStateOf<String?>(null) }
-     // 气泡下标 → LazyColumn item 下标：情绪徽章是列表里的**前置** item，开着的时候整体错一位，
-     // 跳转/定位都得补上它，否则每次都跳到命中的前一条（chatBubbles 下标 ≠ item 下标）。
-     val listLeadingItems = if (moodBadge != null) 1 else 0
+     // 气泡下标 → LazyColumn item 下标：无前置 item，两者一致。
+     val listLeadingItems = 0
      // 落点 + 跳转意图两个 key 都要：只认落点的话，「只有一个命中 → 跳过去 → 用手把列表拖走 →
      // 再点下一个」时 currentMatchIdx 没变、effect 不重启，按钮看着就是死的（用户对「跳不过去」
      // 本来就敏感，这会被当成同一个 bug 没修干净）。jumpTick 表达的是「用户又按了一次」。
@@ -1161,19 +1096,6 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
          chatBubbles.clear(); chatBubbles.addAll(rebuilt)
      }
 
-     /**
-      * 角色卡开场：把开场白当成一条正常的 assistant 消息落下去。
-      *
-      * 走 [persist] 而不是自己写库：那个函数会把活动路径提交进消息树（分支的唯一真源）。
-      * 只往 conversationMsgs 里塞而不提交树，下一次重投影就会把这条开场白丢掉。
-      */
-     fun seedGreeting(text: String) {
-         if (text.isBlank() || convId == null) return
-         conversationMsgs.add(ChatMessage("assistant", text))
-         reprojectBubbles(conversationMsgs.toList())
-         persist()
-     }
-
      // 无「看图」能力时的读屏引导：当前对话模型不支持视觉、也没激活识图(vision)模型时，
      // 告诉 AI 用 ui_control(action=dump) 走无障碍文字读屏，而不是去调需要视觉模型的看图工具白撞报错。
      // 同 genSuggestion，定义在此保证 performSend / pendingAutoSend 使用前已声明。有看图能力则返回空串（不进提示词）。
@@ -1184,8 +1106,7 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
          // ⚠ 只有 ui_control 这轮真下发了才叫它去读屏：本机没无障碍/Shizuku 时它已被能力裁剪摘掉（见 ToolRequirement），
          // 再让模型去调一个工具表里根本不存在的工具，等于教它凭空幻觉一个调用。
          val canDump = com.arix.tool.CapabilityProbe.has(com.arix.tool.ToolRequirement.UI_AUTOMATION) &&
-             com.arix.tool.ToolManager.isToolEnabled("ui_control") &&
-             "ui_control" !in CardToolStore.excluded(context, boundCardId)   // 包 id 与工具同名
+             com.arix.tool.ToolManager.isToolEnabled("ui_control")
          return if (canDump) "$head 要知道屏幕上有什么，用 ui_control(action=dump) 读屏幕上的文字和可点坐标。" else head
      }
 
@@ -1247,48 +1168,18 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
                      val o = arr.optJSONObject(i) ?: continue
                      val title = o.optString("title").take(80); val content = o.optString("content").take(500)
                      if (title.isBlank() || content.isBlank()) continue
-                     memoryManager.upsertByTitle(title, content, "auto_extract", o.optDouble("importance", 0.5).toFloat().coerceIn(0f, 1f), boundCardId, emptyList(), o.optString("type", "fact").ifBlank { "fact" })
+                     memoryManager.upsertByTitle(title, content, "auto_extract", o.optDouble("importance", 0.5).toFloat().coerceIn(0f, 1f), null, emptyList(), o.optString("type", "fact").ifBlank { "fact" })
                  }
              } catch (_: Exception) {}
          }
      }
 
-     // 交互状态卡更新（DESIGN-MEMORY 状态层）：异步、隔离最小上下文；默认关(实验)，内部按开关短路。
-     // 独立于 autoExtract 开关，不被"关自动记忆"连带关掉。
-     fun updateStateCard(config: CloudApiConfig) {
-         if (!InteractionState.isEnabled(context)) return
-         scope.launch {
-             try {
-                 val lu = chatBubbles.lastOrNull { it.role == "user" }?.text ?: return@launch
-                 val la = chatBubbles.lastOrNull { it.role == "assistant" }?.text ?: ""
-                 // 状态卡更新是元任务：优先走「标题」这类便宜/免费的绑定模型（借鉴 model-hierarchy——常规活分给经济型模型省钱），没绑定 getConfigForPurpose 自动回退对话模型
-                 val metaConfig = configManager.getConfigForPurpose("title", capMaxTokens = 1024) ?: config   // 状态卡是几个短字段，封顶
-                 val cid = convId   // 捕获本轮对话 id：更新期间用户可能切走，别把旧快照写到新对话的徽章上
-                 InteractionState.update(context, metaConfig, boundCardId, cid, lu, la)
-                 // 更新后刷新顶部情绪徽章（优先此刻氛围，其次能量档）；仅当仍停在同一对话才应用
-                 if (cid == convId) {
-                     val snap = InteractionState.snapshot(context, boundCardId, cid)
-                     moodBadge = snap.optString("closing_mood").ifBlank { snap.optString("energy") }.ifBlank { null }
-                 }
-             } catch (_: Exception) {}
-         }
-     }
- 
      LaunchedEffect(convId) { com.arix.tool.TodoBus.clear(); messageQueue.clear() }   // 切换对话清掉上一段的任务清单/排队
-     // 切换对话时初始化情绪徽章。
-     // 两道闸都要过：**陪伴包总闸**（情绪状态卡是陪伴能力，没装陪伴包就不该冒出来——
-     // waifu/日记/主动消息都查了这道闸，只有这里漏了）+ 状态卡自己的开关。
-     LaunchedEffect(convId, boundCardId) {
-         moodBadge = if (InteractionState.isEnabled(context)) {
-             val s = InteractionState.snapshot(context, boundCardId, convId)
-             s.optString("closing_mood").ifBlank { s.optString("energy") }.ifBlank { null }
-         } else null
-     }
      LaunchedEffect(active, convId) {
          active?.let { cfg ->
              systemPrompt = cfg.systemPrompt
-             val id = convId ?: configManager.conversationManager.repo.getMostRecentActiveId()
-                 ?: configManager.conversationManager.create(characterCardId = null, configId = cfg.id, title = "新对话")
+              val id = convId ?: configManager.conversationManager.repo.getMostRecentActiveId()
+                  ?: configManager.conversationManager.create(configId = cfg.id, title = "新对话")
              if (convId == null) convId = id
              // 轻量投影：这里只用标题/文件夹/角色卡 id 三个字段，走 getById 会把 messagesJson（可达 MB 级）
              // 连同分支树一起分块读回来——进对话的第一屏就白等这一份。
@@ -1301,42 +1192,14 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
              projectInstruction = withContext(Dispatchers.IO) {
                  conv?.folder?.takeIf { it.isNotBlank() }?.let { ProjectStore.instructionFor(context, it) } ?: ""
              }
-             val cardId = conv?.characterCardId
-             var cardAvatarLocal: String? = null
-             val defaultCardId = cardId ?: cardManager.getDefault()?.id
-             val boundTree = withContext(Dispatchers.IO) {
-                 defaultCardId?.let { cid -> WorldTreeStore.boundTreeId(context, cid)?.let { tid -> WorldTreeStore.get(context, tid) } }
-             }
-             worldTree = boundTree
-             if (cardId != null) { val card = cardManager.getById(cardId); boundCardName = card?.name; characterSetting = card?.characterSetting ?: ""; worldBook = card?.worldBook ?: ""; cardAvatarLocal = card?.avatarPath
-                 cardPrefsPrompt = buildString {
-                     val t = card?.tone ?: ""; if (t.isNotBlank()) append("语气风格：$t\n")
-                     val l = card?.length ?: ""; if (l.isNotBlank()) append("回复长度：$l\n")
-                     val g = card?.language ?: ""; if (g.isNotBlank()) append("语言习惯：$g\n")
-                 }
-                 waifuEnabled = card?.waifuEnabled ?: false
-                 waifuDelayMs = card?.waifuDelayMs ?: 250
-             }
-             else { val defaultCard = cardManager.getDefault(); boundCardName = defaultCard?.name; characterSetting = defaultCard?.characterSetting ?: ""; worldBook = defaultCard?.worldBook ?: ""; cardPrefsPrompt = ""; cardAvatarLocal = defaultCard?.avatarPath }
-             // 组装会话身份（名称/头像）：用户取全局偏好，AI 取角色卡名 + 该卡头像
-             boundCardId = defaultCardId
-             // 告知无状态工具单例当前角色卡，AI 记忆据此归属到本卡而非通用记忆
-             com.arix.tool.ActiveChatContext.characterCardId = boundCardId
-             // 激活本卡「显示替换规则」（渲染层零参数读取）
-             CardRoleplayStore.activate(context, boundCardId)
-             com.arix.tool.ActiveChatContext.conversationId = id   // 供深搜等后台任务把结果投递回本对话
-             // 续接上下文：开新对话时从该角色最近一次别的对话带来"上次聊到哪/氛围/未决问题"
-             continuationText = withContext(Dispatchers.IO) {   // 读状态卡：prefs/DB + JSON，别在 Main 上做
-                 try { InteractionState.buildContinuation(context, boundCardId, convId) } catch (_: Exception) { null }
-             }
-             identity = ChatIdentity(
-                 userName = IdentityPrefs.userName(context).ifBlank { "我" },
-                 userAvatar = IdentityPrefs.userAvatar(context),
-                 aiName = boundCardName ?: "助手",
-                 // 优先用角色卡自带的图片头像（在角色卡编辑器里改）；没有再回退到旧的 IdentityPrefs 头像
-                 aiAvatar = cardAvatarLocal?.takeIf { a -> a.startsWith("content://") || a.startsWith("file://") || a.startsWith("http") || a.startsWith("/") }
-                     ?: boundCardId?.let { IdentityPrefs.aiAvatar(context, it) },
-             )
+              // 组装会话身份：用户取全局偏好，AI 用默认名
+              com.arix.tool.ActiveChatContext.conversationId = id   // 供深搜等后台任务把结果投递回本对话
+              identity = ChatIdentity(
+                  userName = IdentityPrefs.userName(context).ifBlank { "我" },
+                  userAvatar = IdentityPrefs.userAvatar(context),
+                  aiName = "助手",
+                  aiAvatar = IdentityPrefs.aiAvatar(context, 0L),
+              )
              val msgs = configManager.loadConversation(id)
              // 分支树：有 branchesJson 用之(树为准)，否则据线性消息建树。活动路径=树当前活动分支。
              // takeIf 防御：messagesJson(msgs) 是权威线性记录；只有当树能完整复现活动路径(长度 >= msgs)时才采信树，
@@ -1361,24 +1224,6 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
          }
      }
  
-     // ── 角色卡开场白 ──
-     // 只在「这个对话一条消息都没有」时开场，所以键里带 isEmpty()：一旦开过场，list 不空，本效果不再触发。
-     // 单独一个 LaunchedEffect 而不是并进上面那段载入：boundCardId 是**另一个** effect 设的，
-     // 并进去就得赌两个 effect 的先后顺序，而 Compose 不保证。这样写则 boundCardId 变了自然会再跑一次。
-     LaunchedEffect(convId, boundCardId, conversationMsgs.isEmpty()) {
-         if (!behavior.cardGreeting || conversationMsgs.isNotEmpty()) return@LaunchedEffect
-         val cid = boundCardId ?: return@LaunchedEffect
-         val opts = withContext(Dispatchers.IO) {
-             val opening = cardManager.getById(cid)?.openingStatement ?: ""
-             CardRoleplayStore.greetingOptions(context, cid, opening)
-         }
-         when {
-             opts.isEmpty() -> {}
-             // 只有一条就直接开场，别为一条也弹个框问「你要哪条」
-             opts.size == 1 -> seedGreeting(opts.first())
-             else -> greetingChoices = opts
-         }
-     }
      // 进入对话时首次定位用即时滚动（不带动画），避免滚动途中把沿途历史消息全部
      // 渲染/解析 Markdown 造成的进入卡顿；之后的新消息才用平滑滚动。
      var didInitialScroll by remember { mutableStateOf(false) }
@@ -1478,22 +1323,26 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
              // 标题交给首轮对话后的 AI 起名（见下方 auto-title），不再立即用用户首句
              val config = CloudApiConfig(cfg.baseUrl.trimEnd('/'), cfg.apiKey.trim(), cfg.model.trim(), cfg.temperature, cfg.topP, cfg.maxTokens, cfg.frequencyPenalty, cfg.presencePenalty)
              val client = CloudApiClient(config); val startTime = System.currentTimeMillis()
-             try {
-                // 思考交给模型原生 reasoning（由 enableThinking 参数控制），不再用 <thinking> 提示词
-                // 引导——那会让模型把思考写进正文、且语气机械。与主发送路径 performSend 保持一致。
-                // 世界书注入与主发送路径 performSend 保持一致：depth>0 走深度注入，position=user 拼进用户消息，否则进系统提示
-                // 一次求值出「该注入什么、注到哪」：三个桶（系统提示 / 用户消息 / 按深度）互不重叠，每条只落一个桶。
-                val wb = WorldTreeStore.buildInjection(worldTree, conversationMsgs.takeLast(6).joinToString(" ") { it.content })
-                val wbUser = wb.user.isNotBlank()
-                val wbSystem = wb.system.isNotBlank()
-                 if (wbUser && conversationMsgs.isNotEmpty()) { val li = conversationMsgs.lastIndex; conversationMsgs[li] = conversationMsgs[li].copy(content = conversationMsgs[li].content + "\n\n" + PromptLang.pick("【世界书】", "[World book]") + "\n" + wb.user.trim()) }
-                 val sysPrompt = buildString { if (projectInstruction.isNotBlank()) append(PromptLang.pick("【项目说明】\n", "[Project notes]\n")).append(projectInstruction.trim()).append("\n\n"); if (cardPrefsPrompt.isNotBlank()) append(PromptLang.pick("【偏好设置】\n", "[Preferences]\n")).append(cardPrefsPrompt).append("\n"); if (characterSetting.isNotBlank()) append(characterSetting.trim()).append("\n\n"); CardRoleplayStore.exampleBlock(context, boundCardId).takeIf { it.isNotBlank() }?.let { append(it) }; if (wbSystem) append(PromptLang.pick("【世界书】\n", "[World book]\n")).append(wb.system.trim()).append("\n\n"); if (worldBook.isNotBlank()) append(PromptLang.pick("【背景故事】\n", "[Background story]\n")).append(worldBook.trim()).append("\n\n"); if (systemPrompt.isNotBlank()) append(systemPrompt.trim()); com.arix.tool.OperitCompat.enabledSkillInjection(context).takeIf { it.isNotBlank() }?.let { append("\n\n").append(it) }; com.arix.tool.ToolManager.disabledCapabilitiesNote().takeIf { it.isNotBlank() }?.let { append("\n\n").append(it) }; com.arix.tool.ToolManager.missingCapabilitiesNote().takeIf { it.isNotBlank() }?.let { append("\n\n").append(it) }; com.arix.tool.ToolManager.cardScopeNote(CardToolStore.excluded(context, boundCardId)).takeIf { it.isNotBlank() }?.let { append("\n\n").append(it) }; visionFallbackNote().takeIf { it.isNotBlank() }?.let { append("\n\n").append(it) }; append(com.arix.app.PromptLang.directive()) }.trim().let { if (it.isBlank()) null else PromptVars.resolve(it, IdentityPrefs.userName(context), boundCardName ?: "助手", config.model) }
-                val (loopContent, result) = runWithToolLoop(client, conversationMsgs, sysPrompt, enableThinking, null,
-                    wbDepths = wb.depths)
-                 val elapsed = System.currentTimeMillis() - startTime
-                 if (result.error != null) {
-                     errorInfo = friendlyError(result.error ?: ""); haptics.reject()
-                     // 出错也要把**本轮已跑完的工具轮**落盘：它们已经加进 chatBubbles/conversationMsgs 了，
+            try {
+               // 思考交给模型原生 reasoning（由 enableThinking 参数控制），不再用 <thinking> 提示词
+               // 引导——那会让模型把思考写进正文、且语气机械。与主发送路径 performSend 保持一致。
+               // 系统提示组装：项目说明 / 偏好 / 人设 / 系统提示 / 技能注入 / 能力说明。
+               val sysPrompt = buildString {
+                   if (projectInstruction.isNotBlank()) append(PromptLang.pick("【项目说明】\n", "[Project notes]\n")).append(projectInstruction.trim()).append("\n\n")
+                   if (cardPrefsPrompt.isNotBlank()) append(PromptLang.pick("【偏好设置】\n", "[Preferences]\n")).append(cardPrefsPrompt).append("\n")
+                   if (characterSetting.isNotBlank()) append(characterSetting.trim()).append("\n\n")
+                   if (systemPrompt.isNotBlank()) append(systemPrompt.trim())
+                   com.arix.tool.OperitCompat.enabledSkillInjection(context).takeIf { it.isNotBlank() }?.let { append("\n\n").append(it) }
+                   com.arix.tool.ToolManager.disabledCapabilitiesNote().takeIf { it.isNotBlank() }?.let { append("\n\n").append(it) }
+                   com.arix.tool.ToolManager.missingCapabilitiesNote().takeIf { it.isNotBlank() }?.let { append("\n\n").append(it) }
+                   visionFallbackNote().takeIf { it.isNotBlank() }?.let { append("\n\n").append(it) }
+                   append(com.arix.app.PromptLang.directive())
+               }.trim().let { if (it.isBlank()) null else PromptVars.resolve(it, IdentityPrefs.userName(context), "助手", config.model) }
+               val (loopContent, result) = runWithToolLoop(client, conversationMsgs, sysPrompt, enableThinking, null)
+               val elapsed = System.currentTimeMillis() - startTime
+               if (result.error != null) {
+                   errorInfo = friendlyError(result.error ?: ""); haptics.reject()
+                   // 出错也要把**本轮已跑完的工具轮**落盘：它们已经加进 chatBubbles/conversationMsgs 了，
                      // 不 persist 的话只活在内存里，重载即失——用户眼睁睁看着工具执行完、回来全没了。
                      // 工具调得越频繁，撞上 429/超时的机会越多，丢得越狠。
                      runCatching { persist() }
@@ -1501,16 +1350,11 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
                  else {
                      val usage = result.usage; val tps = if (usage != null && usage.completionTokens > 0 && elapsed > 0) usage.completionTokens.toDouble() / (elapsed / 1000.0) else null
                      val content = stripLeakedToolCalls(loopContent.ifEmpty { streaming.content }); val reasoning = streaming.reasoning.ifEmpty { null }
-                     val card = convId?.let { configManager.conversationManager.repo.cardIdOf(it)?.let { cardManager.getById(it) } }   // 只要卡 id：别为它把整份会话(messagesJson 可达 MB 级)拼回来
-                     // 拆气泡（陪伴卡按句 / 设置开关按行）。与 performSend 里那段是同一套判定，见那边的注释。
-                     val splitMode = when {
-                         card?.waifuEnabled == true -> ReplySplitter.Mode.SENTENCE
-                         behavior.splitReplyByLine -> ReplySplitter.Mode.LINE
-                         else -> null
-                     }
+                     // 拆气泡（设置开关按行；角色卡按句的陪伴模式已随角色卡体系移除）。
+                     val splitMode = if (behavior.splitReplyByLine) ReplySplitter.Mode.LINE else null
                      if (splitMode != null) {
                          streaming.complete = true
-                         val gap = if (splitMode == ReplySplitter.Mode.SENTENCE) (card?.waifuDelayMs ?: 250) else behavior.splitDelayMs
+                         val gap = behavior.splitDelayMs
                          ReplySplitter.flow(content, splitMode, gap).collect { part -> chatBubbles.add(ChatBubble("assistant", part)) }
                          if (chatBubbles.isNotEmpty()) { val li = chatBubbles.lastIndex; chatBubbles[li] = chatBubbles[li].copy(usage = usage, tokensPerSec = tps, elapsedMs = elapsed, model = config.model) }
                      }
@@ -1518,7 +1362,7 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
                      conversationMsgs.add(ChatMessage("assistant", content, reasoning, usage?.promptTokens, usage?.completionTokens, usage?.totalTokens, tps, model = config.model))
                      persist()
                      scope.launch(kotlinx.coroutines.Dispatchers.IO) { com.arix.app.ContextCompressor.maybeCompress(context, convId, conversationMsgs.toList(), config) }
-                     genSuggestion(config); autoExtractMemories(config); updateStateCard(config)
+                     genSuggestion(config); autoExtractMemories(config)
                      // 硬信号沉淀（20 小时限频，内部自己判，这里只是个"用户确实在用"的时机）：
                      // 位置/健康/日程/使用习惯这些**确定、便宜、不会幻觉**的信号，以前全是现查现用、用完即弃。
                      // cardId 传 null：这是关于用户本人的，不该跟着某张角色卡走（换张卡不等于换个人）。
@@ -1562,14 +1406,9 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
 
          val replyContext = if (reply != null) "（以下是针对这条消息的回复）\n「${reply}」\n" else ""
 
-         // 世界书激活判定：触发词命中最近对话才注入；position=user 则拼进本轮用户消息，否则进系统提示
-         val wbRecent = conversationMsgs.takeLast(6).joinToString(" ") { it.content } + " " + userText
-         val wb = WorldTreeStore.buildInjection(worldTree, wbRecent)
-                  val wbUser = wb.user.isNotBlank()
-         val wbSystem = wb.system.isNotBlank()
          chatBubbles.add(ChatBubble("user", userText, attachments = atts.ifEmpty { null }))
          justSentId = chatBubbles.lastOrNull()?.id   // 触发这条用户气泡的入场动画
-         conversationMsgs.add(ChatMessage("user", (if (reply != null) "[回复: ${reply.take(40)}] $userText" else userText) + if (wbUser) "\n\n【世界书】\n${wb.user.trim()}" else ""))
+         conversationMsgs.add(ChatMessage("user", (if (reply != null) "[回复: ${reply.take(40)}] $userText" else userText)))
          val userMsgIdx = conversationMsgs.lastIndex
          // 标题交给首轮对话后的 AI 起名（见下方 auto-title），不再立即用用户首句
          val config = CloudApiConfig(cfg.baseUrl.trimEnd('/'), cfg.apiKey.trim(), cfg.model.trim(), cfg.temperature, cfg.topP, cfg.maxTokens, cfg.frequencyPenalty, cfg.presencePenalty)
@@ -1599,16 +1438,12 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
                      if (projectInstruction.isNotBlank()) append("【项目说明】\n").append(projectInstruction.trim()).append("\n\n")
                      if (cardPrefsPrompt.isNotBlank()) append("【偏好设置】\n$cardPrefsPrompt\n\n")
                      if (characterSetting.isNotBlank()) append(characterSetting.trim()).append("\n\n")
-                     CardRoleplayStore.exampleBlock(context, boundCardId).takeIf { it.isNotBlank() }?.let { append(it).append("\n\n") }
-                     if (wbSystem) append("【世界书】\n").append(wb.system.trim()).append("\n\n")
                      if (worldBook.isNotBlank()) append("【背景故事】\n").append(worldBook.trim()).append("\n\n")
                      if (systemPrompt.isNotBlank()) append(systemPrompt.trim())
                      com.arix.tool.OperitCompat.enabledSkillInjection(context).takeIf { it.isNotBlank() }?.let { append("\n\n").append(it) }
                      com.arix.tool.ToolManager.disabledCapabilitiesNote().takeIf { it.isNotBlank() }?.let { append("\n\n").append(it) }
                      // 因本机没运行条件被裁掉的能力（无障碍/使用情况/终端 App…），压成一行告诉它怎么解锁
                      com.arix.tool.ToolManager.missingCapabilitiesNote().takeIf { it.isNotBlank() }?.let { append("\n\n").append(it) }
-                     // 这张角色卡不带的能力：不说的话它会以为自己没这本事，跑去绕路硬凑
-                     com.arix.tool.ToolManager.cardScopeNote(CardToolStore.excluded(context, boundCardId)).takeIf { it.isNotBlank() }?.let { append("\n\n").append(it) }
                      visionFallbackNote().takeIf { it.isNotBlank() }?.let { append("\n\n").append(it) }
                      append("\n\n").append(com.arix.app.PromptLang.directive())
                  }.trim()
@@ -1616,12 +1451,11 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
                  // 用户体感就是「存了没用」。放在 volatileTail（不是 staticSys）是因为它每轮都变，
                  // 塞进静态前缀会把后面几千 token 的人设缓存一起废掉。见 MemoryInjection。
                  val memBlock = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                     MemoryInjection.build(context, boundCardId, userText)
+                     MemoryInjection.build(context, null, userText)
                  }
                  val volatileTail = buildString {
                      if (envStr.isNotBlank()) append(envStr).append("\n\n")
                      memBlock?.let { append(it).append("\n\n") }
-                     InteractionState.buildInjection(context, boundCardId, convId)?.let { append(it).append("\n\n") }
                      continuationText?.let { append(it).append("\n\n") }
                      if (bias?.isNotBlank() == true) append(bias).append("\n\n")
                      if (replyContext.isNotBlank()) append(replyContext)
@@ -1629,7 +1463,7 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
                  val sysPrompt = buildString {
                      append(staticSys)
                      if (volatileTail.isNotBlank()) append("\n\n【当前上下文】\n").append(volatileTail)
-                 }.trim().let { if (it.isBlank()) null else PromptVars.resolve(it, IdentityPrefs.userName(context), boundCardName ?: "助手", config.model) }
+                 }.trim().let { if (it.isBlank()) null else PromptVars.resolve(it, IdentityPrefs.userName(context), "助手", config.model) }
                  // 图像协同：若指定了「识图」用途(purpose=vision)的模型，让它先把图片识别成文字注入上下文，
                  // 主(文本)模型只收文字作答——支持"文本强/看图弱"的分工协作(识图辅助模型)。
                  // 没指定识图模型：把图直接发给主模型(它本身可能支持视觉)，绝不丢图。
@@ -1647,8 +1481,7 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
                          }
                      }
                  }
-                 val (loopContent, result) = runWithToolLoop(client, conversationMsgs, sysPrompt, enableThinking, useImages,
-                     wbDepths = wb.depths)
+                 val (loopContent, result) = runWithToolLoop(client, conversationMsgs, sysPrompt, enableThinking, useImages)
                  val elapsed = System.currentTimeMillis() - startTime
                  if (result.error != null) {
                      errorInfo = friendlyError(result.error ?: ""); haptics.reject()
@@ -1661,24 +1494,16 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
                      val usage = result.usage; val tps = if (usage != null && usage.completionTokens > 0 && elapsed > 0) usage.completionTokens.toDouble() / (elapsed / 1000.0) else null
                      val content = stripLeakedToolCalls(loopContent.ifEmpty { streaming.content }); val reasoning = streaming.reasoning.ifEmpty { null }
                      // Check waifu from current card (not cached)
-                     val card = convId?.let { configManager.conversationManager.repo.cardIdOf(it)?.let { cardManager.getById(it) } }   // 只要卡 id：别为它把整份会话(messagesJson 可达 MB 级)拼回来
-                     // 一条回复拆成几个小气泡连着弹出来。两个来源、同一套出口（见 ReplySplitter）：
-                     //  · 陪伴卡的 waifu 开关 → 按句拆（老行为，走 WaifuProcessor，一个字没改）
-                     //  · 设置里的「按行拆成多条气泡」→ 按行拆（新开关，默认关）
-                     // 卡上开了 waifu 就以卡为准：那是这张卡的人设的一部分，不该被一个全局开关改掉说话方式。
+                     // 一条回复拆成几个小气泡连着弹出来（设置里的「按行拆成多条气泡」，默认关）。
                      // ⚠ 纯渲染：下面 conversationMsgs.add 落的仍是**完整的一条** content，历史与上下文不受影响。
-                     val splitMode = when {
-                         card?.waifuEnabled == true -> ReplySplitter.Mode.SENTENCE
-                         behavior.splitReplyByLine -> ReplySplitter.Mode.LINE
-                         else -> null
-                     }
+                     val splitMode = if (behavior.splitReplyByLine) ReplySplitter.Mode.LINE else null
                      if (splitMode != null) {
                          streaming.complete = true
-                         val gap = if (splitMode == ReplySplitter.Mode.SENTENCE) (card?.waifuDelayMs ?: 250) else behavior.splitDelayMs
+                         val gap = behavior.splitDelayMs
                          ReplySplitter.flow(content, splitMode, gap).collect { part ->
                              chatBubbles.add(ChatBubble("assistant", part))
                          }
-                         // 用量/耗时/模型名挂在最后一条上（同 waifu 老行为）：那是这一轮的结算行，不该每片都挂一遍。
+                         // 用量/耗时/模型名挂在最后一条上：那是这一轮的结算行，不该每片都挂一遍。
                          if (chatBubbles.isNotEmpty()) {
                              val lastIdx = chatBubbles.lastIndex
                              chatBubbles[lastIdx] = chatBubbles[lastIdx].copy(usage = usage, tokensPerSec = tps, elapsedMs = elapsed, model = config.model)
@@ -1689,7 +1514,7 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
                      conversationMsgs.add(ChatMessage("assistant", content, reasoning, usage?.promptTokens, usage?.completionTokens, usage?.totalTokens, tps, model = config.model))
                      persist()
                      scope.launch(kotlinx.coroutines.Dispatchers.IO) { com.arix.app.ContextCompressor.maybeCompress(context, convId, conversationMsgs.toList(), config) }
-                     genSuggestion(config); autoExtractMemories(config); updateStateCard(config)
+                     genSuggestion(config); autoExtractMemories(config)
                      // 硬信号沉淀（20 小时限频，内部自己判，这里只是个"用户确实在用"的时机）：
                      // 位置/健康/日程/使用习惯这些**确定、便宜、不会幻觉**的信号，以前全是现查现用、用完即弃。
                      // cardId 传 null：这是关于用户本人的，不该跟着某张角色卡走（换张卡不等于换个人）。
@@ -1822,7 +1647,7 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
              if (text.isBlank()) return@collect
              autoReadJob?.cancel()
              autoReadJob = scope.launch(Dispatchers.IO) {
-                 try { ttsTool.speak(text, cardId = (boundCardId ?: 0L).takeIf { it > 0 }) }
+                 try { ttsTool.speak(text, cardId = null) }
                  catch (c: kotlinx.coroutines.CancellationException) { throw c }
                  catch (_: Exception) {}
              }
@@ -1862,9 +1687,7 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
                  BubbleAction.DismissMenu -> { contextMenuIdx = -1; showBiasSubmenu = false }
                  BubbleAction.LongPress -> { if (idx >= 0) contextMenuIdx = idx }
                  BubbleAction.AvatarLongPress -> {
-                     boundCardName?.let { name ->
-                         input.text = if (input.text.isEmpty() || input.text.endsWith(" ")) input.text + "@$name " else input.text + " @$name "
-                     }
+                     input.text = if (input.text.isEmpty() || input.text.endsWith(" ")) input.text + "@助手 " else input.text + " @助手 "
                  }
                  BubbleAction.Copy -> { contextMenuIdx = -1; clipboard.setText(androidx.compose.ui.text.AnnotatedString(bubble.text)) }
                  // 选段复制：只把正文交给弹窗，列表这边一个字都不动。
@@ -1897,8 +1720,8 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
                      // 悬浮 TTS 播放器：把本会话所有 AI 消息做成队列，从点的这条开始；无悬浮窗权限则回退原地朗读并引导授权
                      val spoken = chatBubbles.filter { it.role == "assistant" && it.text.isNotBlank() }
                      val start = spoken.indexOfFirst { it === bubble }.coerceAtLeast(0)
-                     if (!FloatingTtsPlayer.show(context, spoken.map { it.text }, start, (boundCardId ?: 0L).takeIf { it > 0 })) {
-                         scope.launch { ttsTool.execute(org.json.JSONObject().apply { put("text", bubble.text); put("language", "zh"); if ((boundCardId ?: 0) > 0) put("card_id", boundCardId) }) }
+                     if (!FloatingTtsPlayer.show(context, spoken.map { it.text }, start, null)) {
+                         scope.launch { ttsTool.execute(org.json.JSONObject().apply { put("text", bubble.text); put("language", "zh") }) }
                          FloatingTtsPlayer.requestOverlayPermission(context)
                      }
                  }
@@ -1920,14 +1743,13 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
                          // 从工具轮中间切一刀最容易留下「assistant 带 tool_calls 却没有配对结果」，
                          // 那条历史一旦发出去就是 400，新会话开局即废。
                          val cut = com.arix.app.ContextCompressor.sanitizePairing(conversationMsgs.take(idx + 1).toList())
-                         val cardId = boundCardId
                          val cfgId = convConfigId ?: active?.id
                          // 标题里带变量必须走 String.format：tr() 的 key 不能含 $（收集脚本会跳过模板串）
                          val newTitle = String.format(tr("%s · 分叉"), convTitle).take(40)
                          if (cut.isNotEmpty()) scope.launch {
                              try {
                                  val cm = configManager.conversationManager
-                                 val newId = cm.create(characterCardId = cardId, configId = cfgId, title = newTitle)
+                                 val newId = cm.create(configId = cfgId, title = newTitle)
                                  cm.saveMessages(newId, cut)
                                  // 原会话一个字不动：这里没有任何 persist/截断，只是新建了一份副本。
                                  // 跳过去用的是既有的「开到某个对话」入口（通知点击走的也是这条，
@@ -2065,20 +1887,6 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
              if (!isSending && chatBubbles.size == conversationMsgs.size) tree.allVariantInfos() else emptyList()
          }
          LazyColumn(state = listState, modifier = Modifier.fillMaxSize().elasticOverscroll(overscroll), contentPadding = androidx.compose.foundation.layout.PaddingValues(top = topContentPadding + 6.dp, bottom = bottomInset)) {
-             if (moodBadge != null) {
-                 item(key = "xtom_mood_badge") {
-                     Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                         // AssistChip 就是「一枚带图标的信息胶囊」，不必手搭 clip+background。
-                         // 不可点，故 onClick 空实现 + enabled=false 交给 M3 自己去调配色。
-                         androidx.compose.material3.AssistChip(
-                             onClick = {}, enabled = false,
-                             leadingIcon = { Icon(androidx.compose.material.icons.Icons.Outlined.FavoriteBorder, contentDescription = null, modifier = Modifier.size(14.dp)) },
-                             label = { Text(moodBadge!!, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
-                             border = null,
-                         )
-                     }
-                 }
-             }
              items(chatBubbles.size, key = { chatBubbles[it].id }, contentType = { chatBubbles[it].role }) { idx ->
                  val b = chatBubbles[idx]
                  // Box 承载 animateItem()（插删/移动的丝滑动画），ChatBubbleItem 参数保持稳定 →
@@ -2524,41 +2332,6 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
              confirmButton = { TextButton(onClick = { errorInfo = null }) { Text(tr("关闭"), color = scheme.primary) } },
              dismissButton = { TextButton(onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(err)) }) { Text(tr("复制"), color = scheme.onSurfaceVariant) } },
              containerColor = scheme.surface, shape = RoundedCornerShape(24.dp)
-         )
-     }
-     greetingChoices?.let { opts ->
-         androidx.compose.material3.AlertDialog(
-             onDismissRequest = { greetingChoices = null },
-             title = { Text(tr("挑一条开场白"), color = scheme.onSurface, fontSize = 15.sp) },
-             text = {
-                 Column(Modifier.verticalScroll(rememberScrollState())) {
-                     opts.forEachIndexed { i, g ->
-                         Box(
-                             Modifier.fillMaxWidth().padding(vertical = 3.dp)
-                                 .clip(RoundedCornerShape(12.dp))
-                                 .background(scheme.surfaceContainerLowest)
-                                 .clickable { greetingChoices = null; scope.launch { seedGreeting(g) } }
-                                 .padding(10.dp)
-                         ) {
-                             Column {
-                                 Text(String.format(tr("第 %d 条"), i + 1), color = scheme.primary, fontSize = 10.sp)
-                                 Text(g.take(160), color = scheme.onSurface, fontSize = 12.sp)
-                             }
-                         }
-                     }
-                 }
-             },
-             confirmButton = {
-                 TextButton(onClick = {
-                     val pick = opts.random()   // 随机：酒馆那边也是这个用法，省得每次开新对话都要挑
-                     greetingChoices = null; scope.launch { seedGreeting(pick) }
-                 }) { Text(tr("随机一条"), color = accents.success) }
-             },
-             dismissButton = {
-                 // 「不用开场白」= 这次不开场。开关本身在设置里，不在这里关。
-                 TextButton(onClick = { greetingChoices = null }) { Text(tr("不用"), color = scheme.onSurfaceVariant) }
-             },
-             containerColor = scheme.surface, shape = RoundedCornerShape(24.dp),
          )
      }
      forwardBubble?.let { fb ->

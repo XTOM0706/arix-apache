@@ -188,8 +188,6 @@ fun createBuiltInPackages(context: Context): List<PackageDef> = listOf(
     PackageDef("plugin_creator", "插件制作", "创建/安装 Skill/沙盒包/MCP：可现写内容，也可从 https 直链联网装；能列出、卸载自己装过的东西。每次真正安装/卸载都会请你当面确认。", "Operit",
         listOf(PluginCreatorTool(context)), enabledByDefault = true),
     // 增强对话 (Operit 移植)
-    PackageDef("worldbook", "世界书", "管理世界设定/角色背景/故事设定（持久化）。", "增强对话",
-        listOf(WorldBookTool(context)), enabledByDefault = false),
     PackageDef("file_converter", "文件转换 / 生成文档", "文本(JSON/CSV/MD/HTML)互转 + 图片格式(PNG/JPG/WEBP)转换 + " +
         "把 Markdown/HTML 生成 PDF 或 Word(.docx) 存到「下载」目录（零依赖，不需要装任何东西）。", "工具",
         listOf(FileConverterTool(context)), enabledByDefault = false),

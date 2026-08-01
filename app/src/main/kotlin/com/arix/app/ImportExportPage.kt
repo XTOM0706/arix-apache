@@ -442,12 +442,6 @@ import com.arix.app.ui.SettingsSlider
             )
         }
 
-        // ===== GitHub 账号 =====
-        Spacer(Modifier.height(14.dp))
-        Text(tr("GitHub 账号"), color = scheme.onSurface, fontSize = 15.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(bottom = 6.dp))
-        // 登录后 token 全局生效：下方备份的 Token 会自动带上、市场/gh 工具也共用。退出/切换后刷新本页 Token 框。
-        GitHubLoginCard(context) { ghToken = GitHubBackup.settings(context).token }
-
         // ===== GitHub 私有仓库云备份 =====
         Spacer(Modifier.height(14.dp))
         Text(tr("GitHub 私有仓库备份（云端）"), color = scheme.onSurface, fontSize = 15.sp, fontWeight = FontWeight.Medium)
@@ -692,14 +686,12 @@ import com.arix.app.ui.SettingsSlider
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             // 中文原串当 key、渲染时才 tr(v)（见下方 Text(tr(v))）——别在这里包 tr()，
             // 那样存进去的就是译文，再 tr() 一次自然查不到。
-            listOf("card" to "角色卡", "world" to "世界书", "config" to "配置", "conversation" to "对话", "cherry" to "Cherry/Chatbox对话", "memory" to "记忆", "skill" to "Skill", "sandbox" to "沙盒", "mcp" to "MCP").forEach { (k, v) ->
+            listOf("config" to "配置", "conversation" to "对话", "cherry" to "Cherry/Chatbox对话", "memory" to "记忆", "skill" to "Skill", "sandbox" to "沙盒", "mcp" to "MCP").forEach { (k, v) ->
                 Button(onClick = {
                     if (importText.isBlank()) { resultMsg = tr("请先粘贴数据"); return@Button }
                     scope.launch {
                         try {
                             resultMsg = when (k) {
-                                "card" -> ImportExport.importCharacterCard(importText, context)
-                                "world" -> ImportExport.importWorldBook(importText, context)
                                 "config" -> ImportExport.importConfig(importText, context)
                                 "conversation" -> ImportExport.importConversation(importText, context)
                                 "cherry" -> {
@@ -725,37 +717,6 @@ import com.arix.app.ui.SettingsSlider
                     Text(tr(v), fontSize = 11.sp)
                 }
             }
-        }
-
-        // ===== 角色卡的旁路数据：各自独立导入导出 =====
-        // 角色卡导出**只导卡本体**（卡是拿来分享的，不该顺手把「这张卡能动哪些工具」塞给对方）。
-        // 下面两样不是卡实体的字段、是按卡另存的数据，所以在这里各给一个独立入口；按卡名关联回本机同名卡。
-        Spacer(Modifier.height(16.dp))
-        Text(tr("角色卡的附属数据（单独导出）"), color = scheme.onSurface, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-        Text(tr("角色卡导出只含这张卡是谁（人设 / 开场白 / 语气等）。世界书、工具范围、扮演增强都不跟着卡走，需要时单独导出；导入时按角色卡名字对回本机的同名卡，找不到同名卡的会跳过。世界书在「世界树」页单独导出。"), color = scheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(top = 2.dp, bottom = 6.dp))
-        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(tr("角色卡工具范围"), color = scheme.onSurface, fontSize = 13.sp)
-                Text(tr("每张卡不带哪些功能包（干活 / 陪伴形态）"), color = scheme.onSurfaceVariant, fontSize = 10.sp)
-            }
-            com.arix.app.ui.ImportExportButtons(
-                context = context, scope = scope, fileBaseName = "card_tool_scopes",
-                produceJson = { ImportExport.exportCardToolScopes(context) },
-                consumeJson = { ImportExport.importCardToolScopes(it, context) },
-                onResult = { msg -> resultMsg = msg },
-            )
-        }
-        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(tr("角色卡扮演增强"), color = scheme.onSurface, fontSize = 13.sp)
-                Text(tr("每张卡的对话示例与显示替换规则"), color = scheme.onSurfaceVariant, fontSize = 10.sp)
-            }
-            com.arix.app.ui.ImportExportButtons(
-                context = context, scope = scope, fileBaseName = "card_roleplay",
-                produceJson = { ImportExport.exportCardRoleplay(context) },
-                consumeJson = { ImportExport.importCardRoleplay(it, context) },
-                onResult = { msg -> resultMsg = msg },
-            )
         }
 
         Spacer(Modifier.height(16.dp))

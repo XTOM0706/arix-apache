@@ -7,17 +7,14 @@ import kotlinx.coroutines.flow.flow
 /**
  * 把一条 AI 回复拆成几条**连着弹出来**的小气泡。
  *
- * 项目里本来就有这个思路的实现：[WaifuProcessor.flowSentences]（陪伴模式，按句号/问号/换行断句）。
- * 所以这里**不另起一套**——[Mode.SENTENCE] 直接转调它，一个字都没重写；这个件只多做一件事：
- * [Mode.LINE]，**按行**拆（用户设置项「按行拆成多条气泡」要的就是行，不是句）。
- *
+ * 两种模式：按句断（[Mode.SENTENCE]，原陪伴/waifu 的行为）与按行断（[Mode.LINE]，设置项）。
  * ⚠ 纯渲染层。落库的仍是**完整的一条** assistant 消息（调用方把整段 content 放进 conversationMsgs），
  * 这里产出的碎片只进 chatBubbles。改这里不会改历史、不会改发给模型的上下文。
  */
 object ReplySplitter {
 
     enum class Mode {
-        /** 按句断（陪伴/waifu 的老行为，走 [WaifuProcessor]）。 */
+        /** 按句断（原陪伴/waifu 的行为）。 */
         SENTENCE,
         /** 按行断（新开关）。 */
         LINE,
@@ -25,8 +22,18 @@ object ReplySplitter {
 
     /** 拆完的每一段依次 emit，中间隔 [delayMs]。段数 ≤1 时就是原样一条，观感与不拆相同。 */
     fun flow(fullText: String, mode: Mode, delayMs: Int): Flow<String> = when (mode) {
-        Mode.SENTENCE -> WaifuProcessor.flowSentences(fullText, delayMs)
+        Mode.SENTENCE -> flowSentences(fullText, delayMs)
         Mode.LINE -> flowLines(fullText, delayMs)
+    }
+
+    /** 按句号/问号/换行断句，逐段 emit。 */
+    private fun flowSentences(fullText: String, delayMs: Int): Flow<String> = flow {
+        val parts = fullText.split(Regex("(?<=[。！？!?])\\s*|(?<=\\n)")).map { it.trim() }.filter { it.isNotEmpty() }
+        val final = if (parts.isEmpty()) listOf(fullText) else parts
+        final.forEachIndexed { i, p ->
+            emit(p)
+            if (i < final.lastIndex && delayMs > 0) delay(delayMs.toLong())
+        }
     }
 
     private fun flowLines(fullText: String, delayMs: Int): Flow<String> = flow {
