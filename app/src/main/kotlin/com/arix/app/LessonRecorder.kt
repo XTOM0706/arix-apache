@@ -79,10 +79,8 @@ object LessonRecorder {
         try {
             val mm = MemoryManager(context)
             val next = HashMap<String, String>()
-            // ofType 已按重要度降序 → 同一个工具第一次遇到的就是最重要那条，后面的直接跳过。
-            // 同一个工具可能有好几类教训（被拒 + 参数错），只带一条：重要度是按"这个坑踩了几次"
-            // 抬上去的，踩得最多的那个最该提醒；全带上就成了每轮都发的固定税。
-            mm.ofType("lesson").forEach { m ->
+            // 只挑教训类型，按更新时间从新到旧 → 同一个工具第一次遇到的就是最近那条。
+            mm.all().filter { it.type == "lesson" }.forEach { m ->
                 val parts = m.title.split("·")
                 if (parts.size < 3 || parts[0] != "教训") return@forEach
                 val tool = parts[1].takeIf { it.isNotBlank() } ?: return@forEach

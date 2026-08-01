@@ -45,7 +45,7 @@ import com.arix.tool.PackageDef
     val enabledMap = remember { mutableStateOf(packages.associate { it.id to XtomPackageManager.isEnabled(it.id) }) }
     var longPressedPkg by remember { mutableStateOf<PackageDef?>(null) }
     val memoryManager = remember { MemoryManager(context) }
-    var pkgMemories by remember { mutableStateOf<List<com.arix.data.entity.MemoryEntity>>(emptyList()) }
+    var pkgMemories by remember { mutableStateOf<List<MemoryEntity>>(emptyList()) }
     // 长按"记忆系统"包时，加载已存储的记忆列表
     LaunchedEffect(longPressedPkg?.id) {
         pkgMemories = if (longPressedPkg?.id == "memory") memoryManager.recent(50) else emptyList()

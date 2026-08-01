@@ -106,11 +106,9 @@ object DiaryGenerator {
         val text = out.trim()
         if (r.error != null || text.isBlank()) return null
         DiaryStore.put(ctx, DiaryEntry(todayDate(), text, System.currentTimeMillis()))
-        if (MemoryFeaturePrefs.snapshot(ctx).diaryToGraph) {
-            try { intoMemoryGraph(ctx, todayDate(), text, card) }
-            catch (ce: kotlinx.coroutines.CancellationException) { throw ce }   // 取消不是失败，吞了上层就停不掉
-            catch (_: Exception) {}   // 入图失败不能连累日记本身——日记已经写好存下了
-        }
+        try { intoMemoryGraph(ctx, todayDate(), text, card) }
+        catch (ce: kotlinx.coroutines.CancellationException) { throw ce }   // 取消不是失败，吞了上层就停不掉
+        catch (_: Exception) {}   // 入记忆失败不能连累日记本身——日记已经写好存下了
         return text
     }
 
@@ -134,20 +132,15 @@ object DiaryGenerator {
         val title = "日记 $date"
         val dayStart = startOfTodayMillis()
         // 同一天重跑（补跑/手动叫日记工具）要**改写**那一条，不是再加一条
-        val existing = mm.findByTitleInCard(title, cardId)
-        val diaryId = if (existing != null) {
-            mm.update(existing.id, title = title, content = text)   // 订正路径：不 reassert，说的还是当天那件事
-            existing.id
+        val existing = mm.all().firstOrNull { it.title == title && it.characterCardId == cardId }
+        if (existing != null) {
+            mm.update(existing.id, title = title, content = text)   // 订正路径
         } else {
             mm.add(
                 title = title, content = text, source = MEMORY_SOURCE, importance = 0.45f,
-                characterCardId = cardId, type = "event", assertedAt = dayStart,
+                characterCardId = cardId, type = "event",
             )
         }
-        // 当天新增的记忆 → 与日记连边。文档分块（RAG 原文碎片）不参与：那不是「今天发生的事」。
-        mm.createdSince(dayStart, cardId, limit = LINK_MAX)
-            .filter { it.id != diaryId && it.source != "document" }
-            .forEach { mm.linkPair(diaryId, it.id, "part_of", 1.0f) }
     }
 
     fun notify(context: Context, text: String, cardName: String? = null, avatar: android.graphics.Bitmap? = null) {

@@ -63,9 +63,6 @@ class XtomApp : Application(), ImageLoaderFactory {
             // 悬浮球/媒体键的常驻档：进程被杀过就在这里自恢复（两者都默认关，关着时这行什么都不做）。
             runCatching { XtomOverlayService.sync(app) }
             if (com.arix.tool.McpServerPrefs.enabled(app)) runCatching { com.arix.tool.McpServer.start(app) }  // 内置 MCP Server：用户上次开着就恢复
-            // 自动整理记忆：排一个低频周期任务（限频/开关判断都在 MemoryTidy 里，这里只负责排上）。
-            // KEEP 幂等，冷启动重复调用不会把下一次执行推后。
-            if (MemoryTidy.autoEnabled(app)) runCatching { MemoryTidy.schedule(app) }
             // 后台查更新：开关关着时 sync 会取消任务、开着才排（一天一次、只在不计流量的网络上）。
             // 幂等，冷启动重复调用不会把下一次执行推后。
             runCatching { UpdateNotifier.sync(app) }

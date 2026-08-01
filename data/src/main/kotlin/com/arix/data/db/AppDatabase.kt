@@ -10,15 +10,11 @@ import com.arix.data.dao.ApiConfigDao
 import com.arix.data.dao.CharacterCardDao
 import com.arix.data.dao.ConversationDao
 import com.arix.data.dao.TagDao
-import com.arix.data.dao.MemoryDao
 import com.arix.data.entity.ApiConfigEntity
 import com.arix.data.entity.CharacterCardEntity
 import com.arix.data.entity.ConversationEntity
 import com.arix.data.entity.ConversationTagCrossRef
 import com.arix.data.entity.TagEntity
-import com.arix.data.entity.MemoryEntity
-import com.arix.data.entity.MemoryTagEntity
-import com.arix.data.entity.MemoryTagCrossRef
 import com.arix.data.search.ChatSearchIndex
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -30,12 +26,9 @@ import kotlinx.coroutines.launch
         CharacterCardEntity::class,
         ConversationEntity::class,
         TagEntity::class,
-        ConversationTagCrossRef::class,
-        MemoryEntity::class,
-        MemoryTagEntity::class,
-        MemoryTagCrossRef::class
+        ConversationTagCrossRef::class
     ],
-    version = 22,
+    version = 23,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -44,7 +37,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun characterCardDao(): CharacterCardDao
     abstract fun conversationDao(): ConversationDao
     abstract fun tagDao(): TagDao
-    abstract fun memoryDao(): MemoryDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -292,6 +284,15 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // Apache-2.0 精简版：记忆改为纯文件存储（ai_workspace/memory.json），删掉 Room 里三张 memory 表。
+        private val MIGRATION_22_23 = object : Migration(22, 23) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS memory_tag_cross_ref")
+                db.execSQL("DROP TABLE IF EXISTS memory_tags")
+                db.execSQL("DROP TABLE IF EXISTS memories")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -299,7 +300,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "arix.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23)
                     .addCallback(object : RoomDatabase.Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
                             super.onCreate(db)

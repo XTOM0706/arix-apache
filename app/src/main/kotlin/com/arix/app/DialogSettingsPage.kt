@@ -305,8 +305,6 @@ import com.arix.app.ui.topChromeGapHeight
         }
         // 耳机键唤起 + 悬浮球：两者都是「不打开 App 也能用它」的入口，放一起。全部默认关。
         FloatingAssistSection(context = context, translucent = !opaque)
-        // 记忆图谱：补边与图谱呈现。放在「记忆」之前——先把线连上，下面那些抽取才有地方落。
-        MemoryFeaturesSection(context = context, translucent = !opaque)
         // 自动记忆（对话后抽取）——与内联 memory 工具互补
         SettingsSection(tr("记忆"), Icons.Outlined.Psychology, translucent = !opaque) {
             SettingsToggle(
@@ -354,64 +352,3 @@ import com.arix.app.ui.topChromeGapHeight
  * 不写不扫、无后台开销，所以默认开着——默认关掉的话「谁把我这条顶掉了」继续瞒着用户、
  * 模型花 token 写的标签继续没人看得见，等于白做。
  */
-@Composable
-private fun MemoryFeaturesSection(context: android.content.Context, translucent: Boolean) {
-    var s by remember { mutableStateOf(MemoryFeaturePrefs.snapshot(context)) }
-    val set: (MemoryFeaturePrefs.Snapshot) -> Unit = { n -> s = n; MemoryFeaturePrefs.save(context, n) }
-    SettingsSection(tr("记忆图谱"), Icons.Outlined.AccountTree, translucent = translucent) {
-        SettingsHint(tr("记忆之间连起来，AI 才能顺着「相关但没直接说到」的线索找到东西。下面这些都是帮你把线连上的。"))
-        SettingsToggle(
-            icon = Icons.Outlined.AddLink,
-            title = tr("提到了但没连"),
-            subtitle = tr("在记忆详情里列出「正文提到了、但没建关联」的记忆，一条条问你要不要连上。完全离线，不联网也不调模型。"),
-            checked = s.mentions,
-            onCheckedChange = { set(s.copy(mentions = it)) },
-        )
-        if (s.mentions) SettingsSlider(
-            title = tr("标题至少几个字才参与匹配"),
-            subtitle = tr("太短的标题会把一大片不相干的记忆连成一坨。"),
-            value = s.mentionMinLen.toFloat(),
-            range = MemoryFeaturePrefs.MIN_LEN_LOW.toFloat()..MemoryFeaturePrefs.MIN_LEN_HIGH.toFloat(),
-            onValueChange = { set(s.copy(mentionMinLen = it.toInt())) },
-            unit = tr("字"),
-            steps = MemoryFeaturePrefs.MIN_LEN_HIGH - MemoryFeaturePrefs.MIN_LEN_LOW - 1,
-            icon = Icons.AutoMirrored.Outlined.ShortText,
-        )
-        SettingsToggle(
-            icon = Icons.Outlined.Link,
-            title = tr("关联面板"),
-            subtitle = tr("记忆详情里列出它连着谁、以及是被谁的新说法顶掉的，可跳转、可断开、可恢复。"),
-            checked = s.backlinks,
-            onCheckedChange = { set(s.copy(backlinks = it)) },
-        )
-        SettingsToggle(
-            icon = Icons.Outlined.Hub,
-            title = tr("局部图谱"),
-            subtitle = tr("详情里的「看关系」：只画这条记忆两跳内的邻居，而不是全局那团毛线球。"),
-            checked = s.localGraph,
-            onCheckedChange = { set(s.copy(localGraph = it)) },
-        )
-        SettingsToggle(
-            icon = Icons.Outlined.Palette,
-            title = tr("图谱按来源着色"),
-            subtitle = tr("一眼看出哪条是你说的、哪条是它自己抽出来的。关闭则按记忆类型着色。"),
-            checked = s.graphColorBySource,
-            onCheckedChange = { set(s.copy(graphColorBySource = it)) },
-        )
-        SettingsToggle(
-            icon = Icons.Outlined.Sell,
-            title = tr("标签"),
-            subtitle = tr("显示并可编辑每条记忆的标签，筛选行也能按标签筛。标签一直在库里，只是以前没地方看。"),
-            checked = s.tagUi,
-            onCheckedChange = { set(s.copy(tagUi = it)) },
-        )
-        SettingsToggle(
-            icon = Icons.AutoMirrored.Outlined.MenuBook,
-            title = tr("日记入图"),
-            subtitle = tr("每天的日记同时存成一条记忆，并和当天新增的记忆连起来——「上周三我们聊了什么」才有得查。"),
-            checked = s.diaryToGraph,
-            onCheckedChange = { set(s.copy(diaryToGraph = it)) },
-        )
-        SettingsHint(tr("日记入图要先在陪伴设置里开启「每日日记」。"))
-    }
-}

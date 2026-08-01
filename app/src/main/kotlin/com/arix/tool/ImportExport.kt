@@ -10,7 +10,6 @@ import com.arix.app.ConversationManager
 import com.arix.app.MemoryManager
 import com.arix.cloudapi.model.ChatMessage
 import com.arix.data.entity.CharacterCardEntity
-import com.arix.data.entity.MemoryEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext

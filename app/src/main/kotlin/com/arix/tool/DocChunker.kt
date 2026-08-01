@@ -1,7 +1,7 @@
 package com.arix.tool
 
 import com.arix.app.MemoryManager
-import com.arix.data.entity.MemoryEntity
+import com.arix.app.MemoryEntity
 
 /**
  * 文档知识库 —— 切块、入库、按文档聚合。
@@ -83,34 +83,18 @@ object DocChunker {
         // 幂等清理。用 search(docName) 而不是全表扫：文档名本身就是最强的关键词信号。
         runCatching { mm.search(docName).filter { it.title.startsWith(prefix) }.forEach { mm.delete(it.id) } }
         var ok = 0; var lastErr: String? = null
-        val ids = ArrayList<Long>(chunks.size)
         chunks.forEachIndexed { i, ch ->
             try {
-                ids.add(mm.add(
+                mm.add(
                     title = titleOf(docName, i, chunks.size), content = ch,
                     source = SOURCE, importance = 0.4f, characterCardId = cardId, type = "fact",
-                ))
+                )
                 ok++
             } catch (c: kotlinx.coroutines.CancellationException) {
                 throw c   // STOP 要能中断，别把取消吞成"这一块失败"
             } catch (e: Exception) { lastErr = e.message }
         }
-        // ⭐ 相邻块之间连边。不连的话这些块在记忆图里是 N 个**完全孤立**的点。
-        //
-        // 为什么这很要紧：检索命中的是**一个块**，而答案经常横跨块边界——上面已经解决了
-        // 「块内只回前 400 字」，但「块间断裂」是另一半。记忆检索里有一套现成的两跳邻居展开
-        // （MemoryManager.expandNeighbors，HOP_MAX=2/NEIGHBOR_MAX=8），它正是用来捞
-        // 「字面和语义都没命中、但确实相关」的东西的——可它在一张空图上跑，等于没写。
-        // 连上链之后，命中第 i 块会自动把 i±1（两跳内 i±2）一起带进上下文，**检索逻辑一行都不用改**。
-        //
-        // 只连相邻、不建「文档根节点」：根节点没有正文，是一行空记忆，除了让列表变脏没别的用；
-        // 而「顺着结构读到上下文」这个需求，相邻链已经满足了。
-        // 边权给 0.9（略低于默认 1.0）：它是结构关系不是语义关系，不该压过真正相关的记忆。
-        for (i in 0 until ids.size - 1) {
-            try { mm.linkPair(ids[i], ids[i + 1], type = "part_of", weight = 0.9f) }
-            catch (c: kotlinx.coroutines.CancellationException) { throw c }
-            catch (_: Exception) { /* 连边失败不影响正文已入库，静默 */ }
-        }
+        // 相邻块连边（记忆图谱）在 Apache-2.0 精简版已移除：记忆改为纯文件存储，无图可连。
         return Stored(ok, chunks.size, all.size > MAX_CHUNKS, lastErr)
     }
 
