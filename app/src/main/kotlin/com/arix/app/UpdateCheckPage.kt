@@ -85,7 +85,7 @@ object UpdatePrefs {
 }
 
 object UpdateChecker {
-    /** 正版仓库。⚠️ 目前仍是私有仓，公开之后这里才真的查得到东西。 */
+    /** GPL 满血版仓库：本精简版更新一律引导到满血版（功能完整，更新走它）。 */
     const val REPO = "XTOM0706/arix-app"
     /**
      * ⚠️ `/releases/latest` **不返回 prerelease**（我们的开发快照全是 prerelease，
@@ -346,6 +346,7 @@ object UpdateChecker {
             }
         }
 
+        SettingsHint(tr("本版为 Apache-2.0 精简版，移除了部分能力。想要完整功能与后续更新，请改用 GPL 满血版（官方仓库 XTOM0706/arix-app）。"))
         SettingsSection(tr("检查更新"), Icons.Outlined.SystemUpdate, translucent = !opaque) {
             SettingsToggle(
                 icon = Icons.Outlined.SystemUpdate,
