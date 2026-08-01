@@ -210,8 +210,6 @@ fun createBuiltInPackages(context: Context): List<PackageDef> = listOf(
         listOf(BleTool(context)), enabledByDefault = false),
     PackageDef("home_assistant", "Home Assistant", "智能家居：列/查设备状态、调用服务开关灯/插座/空调等（直连 HA 官方 REST API，需填 HA 地址+长效令牌）。", "设备控制",
         listOf(HomeAssistantTool(context)), enabledByDefault = false),
-    PackageDef("site_cookies", "站点 Cookie", "读取已登录网站的 cookie/token（配合站点登录），供调用需鉴权的接口。含登录凭据、默认关、建议设为询问。", "工具",
-        listOf(SiteCookiesTool()), enabledByDefault = false),
     PackageDef("web_server", "内嵌 Web 服务器", "在本机起极简 HTTP 静态服务器，把私有目录里生成的网页/报告用浏览器打开或分享到局域网(lan=true)；只读、只服务 app 私有目录、防路径穿越。", "网络",
         listOf(WebServerTool(context)), enabledByDefault = false),
     PackageDef("message_gateway", "消息网关", "把一段消息转发出去：share 调起微信/QQ/Telegram/邮件等 App 由你点发送；webhook 把消息 POST 到企业微信/飞书/Discord/Slack 或自建机器人自动送达（URL 只存本机）。", "工具",

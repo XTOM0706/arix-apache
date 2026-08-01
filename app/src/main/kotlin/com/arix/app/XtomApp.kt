@@ -23,12 +23,6 @@ class XtomApp : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
-        // ⭐ 必须是**第一件事**：隐身进程只需要给 WebView 换数据目录，然后立刻收手。
-        // 主进程那一整套初始化（注册工具 / 起 MCP server / 建通知渠道 / 补 DB 全文索引…）
-        // 在第二个进程里重跑一遍不只是浪费——MCP server 会抢同一个端口、通知渠道会重复建。
-        // 而 setDataDirectorySuffix 又要求"任何 WebView 创建之前"，
-        // 所以这一句既是隔离的起点，也是进程分流的闸。见 IncognitoWeb。
-        if (IncognitoWeb.bootstrapIfIncognito(this)) return
         appContext = applicationContext
         registerActivityLifecycleCallbacks(AppForeground.callbacks)
         CrashHandler.init(this)

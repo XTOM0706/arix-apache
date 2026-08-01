@@ -543,7 +543,6 @@ import androidx.compose.ui.unit.IntOffset
              nav("voice_clone", Icons.Outlined.RecordVoiceOver, "声音克隆", "对话与模型"),
              nav("user_scripts", Icons.Outlined.Code, "用户脚本", "对话与模型"),
              nav("search_settings", Icons.Outlined.Public, "联网搜索", "对话与模型"),
-             nav("site_login", Icons.Outlined.Menu, "站点登录", "对话与模型"),
              nav("conversations", Icons.Outlined.History, "对话管理", "对话与模型"),
              nav("favorites", Icons.Outlined.Bookmark, "收藏", "对话与模型"),
              nav("usage", Icons.Outlined.Dashboard, "使用统计", "对话与模型"),
@@ -1055,7 +1054,6 @@ import androidx.compose.ui.unit.IntOffset
                      "companion_settings" -> CompanionSettingsPage(context = context)
                      "tool_keys" -> ToolKeysPage(context = context)
                      "search_settings" -> SearchSettingsPage(context = context)
-                     "site_login" -> SiteLoginPage(context = context)
                      "user_scripts" -> UserScriptPage(context = context)
                      "about" -> AboutPage(context = context)
                      "favorites" -> FavoritesPage(context = context)
@@ -1399,7 +1397,6 @@ import androidx.compose.ui.unit.IntOffset
                 SettingsRow(Icons.Outlined.RecordVoiceOver, tr("声音克隆"), "voice_clone", tr("录一段/选一段人声，调 Minimax 或硅基流动克隆 API 生成专属音色，克隆完可直接用于朗读。")),
                 SettingsRow(Icons.Outlined.Code, tr("用户脚本（油猴式）"), "user_scripts", tr("给指定网址配 JS 脚本，open_page 打开匹配网址时自动注入执行（去广告/展开正文/破懒加载等）。")),
                  SettingsRow(Icons.Outlined.Public, tr("联网搜索（引擎 / 深度研究）"), "search_settings", tr("配置联网搜索：14 键控引擎(Tavily/Brave/…)、AnySearch、Perplexica，以及深度研究(deep_search)的研究模型与轮数。普通搜索默认必应+百度免配置；这里是可选增强，默认全关，开启并填 key 才用。")),
-                 SettingsRow(Icons.Outlined.Menu, tr("站点登录（cookie）"), "site_login", tr("在 WebView 里登录微博/小红书/B站/知乎等，cookie 存下来；之后 AI 用 open_page/深度搜索访问这些站需登录的内容就能进去，破「需登录进不去」。")),
                  SettingsRow(Icons.Outlined.History, tr("对话管理"), "conversations", tr("查看/管理全部对话：搜索、重命名、归档、删除历史对话。")),
                  SettingsRow(Icons.Outlined.Bookmark, tr("收藏"), "favorites", tr("聊天里长按消息「收藏」的内容，集中查看、复制、删除。")),
                  SettingsRow(Icons.Outlined.Dashboard, tr("使用统计"), "usage", tr("对话/消息/Token 总量 + 近 17 周活跃热力图。纯本地统计。")),
@@ -1488,7 +1485,7 @@ import androidx.compose.ui.unit.IntOffset
      "config" -> tr("模型配置"); "stt" -> tr("语音识别"); "tts" -> tr("语音朗读"); "voice_clone" -> tr("声音克隆"); "conversations" -> tr("对话管理"); "cards" -> tr("角色卡")
      "memory" -> tr("记忆管理"); "packages" -> tr("本地包"); "operit" -> tr("云端市场"); "wake" -> tr("语音唤醒")
      "permissions" -> tr("权限管理"); "plugins" -> tr("插件制作"); "import" -> tr("导入导出"); "terminal" -> tr("终端")
-     "monitor" -> tr("监控 & 风控"); "activity_center" -> tr("AI 活动中心"); "crash" -> tr("崩溃报告"); "settings" -> tr("应用设置"); "personalization" -> tr("个性化"); "dialog_settings" -> tr("对话设置"); "companion_settings" -> tr("陪伴设置"); "tool_keys" -> tr("工具密钥"); "search_settings" -> tr("联网搜索"); "site_login" -> tr("站点登录"); "settings_hub" -> tr("设置"); "about" -> tr("关于软件"); "favorites" -> tr("收藏"); "files" -> tr("文件"); "file_history" -> tr("文件改动历史"); "chat_appearance" -> tr("聊天外观"); "projects" -> tr("项目"); "worldtree" -> tr("世界书"); "usage" -> tr("使用统计"); "workflows" -> tr("工作流"); "user_scripts" -> tr("用户脚本")
+     "monitor" -> tr("监控 & 风控"); "activity_center" -> tr("AI 活动中心"); "crash" -> tr("崩溃报告"); "settings" -> tr("应用设置"); "personalization" -> tr("个性化"); "dialog_settings" -> tr("对话设置"); "companion_settings" -> tr("陪伴设置"); "tool_keys" -> tr("工具密钥"); "search_settings" -> tr("联网搜索"); "settings_hub" -> tr("设置"); "about" -> tr("关于软件"); "favorites" -> tr("收藏"); "files" -> tr("文件"); "file_history" -> tr("文件改动历史"); "chat_appearance" -> tr("聊天外观"); "projects" -> tr("项目"); "usage" -> tr("使用统计"); "user_scripts" -> tr("用户脚本")
      "proxy" -> tr("网络代理"); "storage" -> tr("存储占用"); "app_log" -> tr("运行日志"); "update" -> tr("检查更新")
      else -> "Arix"
  }

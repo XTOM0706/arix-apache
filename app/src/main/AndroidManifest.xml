@@ -221,18 +221,6 @@
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
 
-        <!--
-            隐身取页服务。android:process 让它跑在**独立进程**里——这是真隐身的唯一做法：
-            CookieManager 是进程级单例，同进程内所有 WebView 共用一份 cookie 库，
-            已存在的第一方 cookie 照样会被发出去。独立进程 + WebView.setDataDirectorySuffix
-            才有自己的 cookie/缓存/DOM storage。见 IncognitoWeb（那里也写了 API<28 为什么用不了）。
-            exported=false：只给自家主进程绑，别让别的 App 拿它当代理去取页。
-        -->
-        <service
-            android:name=".IncognitoFetchService"
-            android:exported="false"
-            android:process=":incognito" />
-
         <service
             android:name=".WakeService"
             android:exported="false"

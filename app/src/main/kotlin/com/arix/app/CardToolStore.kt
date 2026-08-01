@@ -39,9 +39,9 @@ object CardToolStore {
         "diary", "media", "health_measure", "worldbook", "social_share",
     )
     val COMPANION_EXCLUDES: Set<String> = setOf(
-        "shell", "local_linux", "code_runner", "file_tools", "file_converter", "csv_export",
-        "workflow", "sub_agent", "http_tools", "net_diag", "net_log", "web_server", "mcp_server",
-        "settings", "ui_control", "skill", "github", "plugin_creator", "browser", "site_cookies",
+        "shell", "file_tools", "file_converter", "csv_export",
+        "http_tools", "net_diag", "net_log", "web_server", "mcp_server",
+        "settings", "ui_control", "github", "plugin_creator", "browser",
         // send_intent 能拉起设备上任何 App 的任何组件——陪伴卡不该有这个。
         // 它虽然是 DEBUGGER 级（默认要问用户），但陪伴场景里连"问"都是多余的打扰。
         "intent",

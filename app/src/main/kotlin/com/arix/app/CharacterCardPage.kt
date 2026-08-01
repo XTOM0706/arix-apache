@@ -166,8 +166,6 @@ import com.arix.app.ui.topChromeGapHeight
      var chatImportUrl by remember { mutableStateOf("") }
      var chatImportFetching by remember { mutableStateOf(false) }
      var chatImportStatusIsError by remember { mutableStateOf(false) }
-     // 本机做不了真隐身时，先弹确认框问用户要不要退化成普通方式；非空 = 正等用户点头，那个链接存在这里
-     var chatImportFallbackUrl by remember { mutableStateOf<String?>(null) }
      var editorName by remember { mutableStateOf("") }; var editorDesc by remember { mutableStateOf("") }
      var editorSetting by remember { mutableStateOf("") }; var editorOpening by remember { mutableStateOf("") }
      var editorWorldBook by remember { mutableStateOf("") }
@@ -663,37 +661,18 @@ import com.arix.app.ui.topChromeGapHeight
 
      // 从其他 AI 的公开聊天导入角色卡：贴对话文本 / 给一个链接 → CardFromChat 提炼人设+记忆 → 建卡
      if (showChatImport) {
-         // 给链接时先隐身取正文（不带本机在该站点的登录态、用完清痕迹），取到手后照原「贴文本」流程走。
-         // Unsupported/Failed 两态含义不同，不能混成一句「失败了」——见 IncognitoFetch.Result 的三态注释。
-         fun fetchChatImportUrl(url: String, allowFallback: Boolean) {
+         // 给链接时用 open_page 取正文，取到手后照原「贴文本」流程走。
+         fun fetchChatImportUrl(url: String) {
              if (chatImportFetching) return
              chatImportFetching = true; chatImportStatusIsError = false
-             chatImportStatus = tr("正在隐身访问链接…")
+             chatImportStatus = tr("正在访问链接…")
              scope.launch {
-                 when (val r = IncognitoFetch.text(context, url)) {
-                     is IncognitoFetch.Result.Text -> {
-                         chatImportText = r.text
-                         chatImportStatus = tr("已取到网页正文，可以点「提炼并生成」了")
-                     }
-                     IncognitoFetch.Result.Unsupported -> {
-                         if (allowFallback) {
-                             // 用户已在确认框里点头同意：改用 OpenPageTool 的普通抓取(不传 incognito)，
-                             // 它会先匿名试、匿名拿不到才带上站点登录态重试——跟 open_page 工具本身一个口径。
-                             chatImportStatus = tr("正在用普通方式访问…")
-                             val res = com.arix.tool.OpenPageTool(context).execute(org.json.JSONObject().put("url", url))
-                             if (res.isError || res.content.isBlank()) {
-                                 chatImportStatusIsError = true; chatImportStatus = tr("普通方式也没能取到网页正文")
-                             } else {
-                                 chatImportText = res.content
-                                 chatImportStatus = tr("已用普通方式取到网页正文，可以点「提炼并生成」了")
-                             }
-                         } else {
-                             // 不许悄悄降级：先弹确认框，用户点「继续」才会真的发起普通访问
-                             chatImportStatus = ""
-                             chatImportFallbackUrl = url
-                         }
-                     }
-                     is IncognitoFetch.Result.Failed -> { chatImportStatusIsError = true; chatImportStatus = r.reason }
+                 val res = com.arix.tool.OpenPageTool(context).execute(org.json.JSONObject().put("url", url))
+                 if (res.isError || res.content.isBlank()) {
+                     chatImportStatusIsError = true; chatImportStatus = tr("没能取到网页正文，换个链接或直接粘贴文本")
+                 } else {
+                     chatImportText = res.content
+                     chatImportStatus = tr("已取到网页正文，可以点「提炼并生成」了")
                  }
                  chatImportFetching = false
              }
@@ -717,7 +696,7 @@ import com.arix.app.ui.topChromeGapHeight
                          Spacer(Modifier.width(6.dp))
                          TextButton(
                              enabled = !chatImportBusy && !chatImportFetching && chatImportUrl.trim().isNotBlank(),
-                             onClick = { fetchChatImportUrl(chatImportUrl.trim(), allowFallback = false) },
+                             onClick = { fetchChatImportUrl(chatImportUrl.trim()) },
                          ) { Text(if (chatImportFetching) tr("取…") else tr("取正文"), color = scheme.primary) }
                      }
                      if (chatImportStatus.isNotBlank()) { Spacer(Modifier.height(6.dp)); Text(chatImportStatus, color = if (chatImportStatusIsError) scheme.error else scheme.primary, style = MaterialTheme.typography.bodySmall) }
@@ -740,18 +719,6 @@ import com.arix.app.ui.topChromeGapHeight
              dismissButton = { TextButton(onClick = { if (!chatImportBusy && !chatImportFetching) showChatImport = false }) { Text(tr("取消"), color = scheme.onSurfaceVariant) } },
              containerColor = scheme.surface, shape = RoundedCornerShape(24.dp),
          )
-         // 本机做不了真隐身(API < 28)时的二次确认：必须用户点头才退化成普通方式，绝不悄悄替换成「隐身」
-         if (chatImportFallbackUrl != null) {
-             val pendingUrl = chatImportFallbackUrl!!
-             androidx.compose.material3.AlertDialog(
-                 onDismissRequest = { chatImportFallbackUrl = null },
-                 title = { Text(tr("这台设备做不到真隐身"), color = scheme.onSurface) },
-                 text = { Text(tr("这台机器的系统版本做不到真隐身（需要 Android 9 以上）。继续的话会用普通方式访问，可能带上你在该网站的登录状态。要继续吗？"), color = scheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) },
-                 confirmButton = { TextButton(onClick = { chatImportFallbackUrl = null; fetchChatImportUrl(pendingUrl, allowFallback = true) }) { Text(tr("继续"), color = scheme.primary) } },
-                 dismissButton = { TextButton(onClick = { chatImportFallbackUrl = null }) { Text(tr("取消"), color = scheme.onSurfaceVariant) } },
-                 containerColor = scheme.surface, shape = RoundedCornerShape(24.dp),
-             )
-         }
      }
  } // end CharacterCardPage
 

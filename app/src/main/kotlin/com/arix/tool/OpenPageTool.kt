@@ -42,7 +42,6 @@ class OpenPageTool(private val context: android.content.Context) : Tool {
             put("url", JSONObject().apply { put("type", "string"); put("description", "page URL") })
             put("format", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("auto", "raw", "json"))); put("description", "auto=browser-rendered article text (default, avoids 403); raw=direct HTML; json=direct + parse JSON") })
             put("mode", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("text", "images", "video"))); put("description", "text (default); images=all image links on the page; video=info/cover + playable link (Bilibili via official API; YouTube info + page link; others scrape <video>/.mp4/.m3u8)") })
-            put("incognito", JSONObject().apply { put("type", "boolean"); put("description", "Fetch in an isolated process with its own cookie jar: sends none of the user's logins and leaves no trace. Use it for pages that need no login — shared conversation links, public profiles, anything the user should not be identified on. Costs a little more time and cannot reach login-walled content.") })
         })
         put("required", JSONArray(listOf("url")))
     }
@@ -55,36 +54,6 @@ class OpenPageTool(private val context: android.content.Context) : Tool {
         // SSRF 前置闸门：免 root 也能让被注入的 AI 去打本机/局域网/云元数据，这里逐地址判私网后再放行。
         withContext(Dispatchers.IO) { WebGuard.check(urlStr) }?.let {
             return ToolResult("拒绝打开：$it（open_page 不访问内网/本机/云元数据地址）", isError = true)
-        }
-
-        // ── 隐身：整条另走一路，**不能**掉进下面那套兜底链 ──
-        //
-        // 为什么必须早退而不是加个开关往下传：下面那条链的第 2 级是 `withCookies = true`
-        //（带站点登录 cookie 重试），第 4 级是把 URL 交给第三方 AnySearch 去抓。
-        // 这两级在隐身语义下都是**反着的**——一个把用户的登录态送出去，一个把他在看什么告诉第三方。
-        // 一旦允许往下掉，"隐身"就变成了"大概率隐身"，那比不提供这个选项更糟。
-        //
-        // 隐身只有两级：独立进程的 WebView（真隐身）→ 直连（不带 cookie 罐，仍然匿名）。
-        // 拿不到就老实说拿不到。
-        if (params.optBoolean("incognito", false)) {
-            return when (val r = com.arix.app.IncognitoFetch.text(context, urlStr)) {
-                is com.arix.app.IncognitoFetch.Result.Text ->
-                    ToolResult(UntrustedWeb.fence(r.text.take(OPEN_PAGE_MAX), "隐身抓取"))
-                // 做不到就明说，**绝不**偷偷用普通方式顶上去：模型据此才能决定
-                //「换个不需要隐身的做法」还是「问用户要不要用普通方式」。
-                com.arix.app.IncognitoFetch.Result.Unsupported -> ToolResult(
-                    "This device cannot do real incognito (needs Android 9+). Not falling back silently — " +
-                        "either ask the user whether a normal fetch is acceptable (it may carry their login), " +
-                        "or take an approach that needs no page fetch.",
-                    isError = true,
-                )
-                is com.arix.app.IncognitoFetch.Result.Failed -> {
-                    // 直连兜底：HttpURLConnection 不带 cookie 罐，仍然是匿名访问，没破坏隐身语义
-                    val direct = withContext(Dispatchers.IO) { directFetch(urlStr) }
-                    if (!direct.isNullOrBlank()) ToolResult(UntrustedWeb.fence(direct.take(OPEN_PAGE_MAX), "隐身抓取(直连)"))
-                    else ToolResult("隐身取页没成功：${r.reason}", isError = true)
-                }
-            }
         }
 
         // 小红书图文：结构化取 标题/正文/图片（反爬狠，走 WebView 内核）

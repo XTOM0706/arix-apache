@@ -117,9 +117,9 @@ object ToolApprovalJudge {
         // 读私密数据
         "read_sms", "contacts", "clipboard", "health_measure", "take_photo", "screen_ocr",
         // 对外网络/暴露本机
-        "http_request", "web_server", "site_cookies", "home_assistant",
+        "http_request", "web_server", "home_assistant",
         // 装扩展/改 AI 自身
-        "plugin_creator", "mcp_server", "skill", "workflow", "create_agent", "manage_chats",
+        "plugin_creator", "mcp_server", "manage_chats",
         // 花钱
         "generate_image",
     )
