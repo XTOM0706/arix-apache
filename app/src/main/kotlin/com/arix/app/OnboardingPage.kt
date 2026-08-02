@@ -46,11 +46,13 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.Savings
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Timeline
+import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material.icons.outlined.Waves
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -105,6 +107,7 @@ import com.arix.app.ui.rememberFrameFloat
 import com.arix.app.ui.rememberFrameProgress
 import com.arix.app.ui.revealVertically
 import com.arix.app.ui.staggerIn
+import com.arix.tool.TtsTool
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -151,12 +154,14 @@ private fun Modifier.stepIn(index: Int): Modifier = this.staggerIn(LocalStepEnte
 private const val STEP_WELCOME = 0
 private const val STEP_MODEL = 1
 private const val STEP_PERMISSION = 2
-private const val STEP_WAKE = 3
-private const val STEP_IDENTITY = 4
-private const val STEP_ROLE = 5
-private const val STEP_TOUR = 6
-private const val STEP_DONE = 7
-private const val STEP_COUNT = 8
+private const val STEP_VOICE = 3
+private const val STEP_WAKE = 4
+private const val STEP_ASSISTANT = 5
+private const val STEP_IDENTITY = 6
+private const val STEP_ROLE = 7
+private const val STEP_TOUR = 8
+private const val STEP_DONE = 9
+private const val STEP_COUNT = 10
 
 /**
  * @param onFinish 走完/跳过时回调。参数是「结束后想直接打开的页面路由」，没有就传 null
@@ -171,15 +176,17 @@ fun OnboardingPage(onFinish: (String?) -> Unit) {
 
     val pager = rememberPagerState(pageCount = { STEP_COUNT })
 
-    // 「连模型」那步是唯一会拦人的：没测通就不让往后走（但「跳过」永远可用）。
+    // 「连模型」和「设为默认助手」是两处会拦人的：没测通/没设成不让往后走（但「跳过」永远可用）。
     var modelReady by remember { mutableStateOf(false) }
+    var assistantReady by remember { mutableStateOf(false) }
     // 结束后要跳的页面（唤醒那步可能设成 "wake"）
     var pendingRoute by remember { mutableStateOf<String?>(null) }
 
     // 用 settledPage 而不是 currentPage 判「拦不拦」：currentPage 在手指拖过一半时就翻，
     // 那一刻把 userScrollEnabled 关掉会掐断正在收尾的吸附动画，页面停在两页中间。
     // settledPage 只在完全停稳后变，关滚动时已经没有在飞的手势了。
-    val locked = pager.settledPage == STEP_MODEL && !modelReady
+    val locked = (pager.settledPage == STEP_MODEL && !modelReady) ||
+        (pager.settledPage == STEP_ASSISTANT && !assistantReady)
 
     // 按钮翻页带 FullMotion：手表上「系统动画缩放=0」很常见，不加的话 animateScrollToPage 直接瞬移，
     // 下面那套视差/入场全白搭（手指拖动不受影响，因为那是跟手的，不走动画系统）。
@@ -231,8 +238,10 @@ fun OnboardingPage(onFinish: (String?) -> Unit) {
                         STEP_WELCOME -> WelcomeStep(compact)
                         STEP_MODEL -> ModelStep(compact = compact, onReadyChange = { modelReady = it })
                         STEP_PERMISSION -> PermissionStep(compact)
+                        STEP_VOICE -> VoiceModelStep(compact)
                         STEP_WAKE -> WakeStep(compact = compact, gotoWake = pendingRoute == "wake",
                             onGotoWakeChange = { pendingRoute = if (it) "wake" else null })
+                        STEP_ASSISTANT -> DefaultAssistantStep(compact = compact, onReadyChange = { assistantReady = it })
                         STEP_IDENTITY -> IdentityStep(compact)
                         STEP_ROLE -> RoleStep(compact)
                         STEP_TOUR -> TourStep(compact)
@@ -349,7 +358,9 @@ private fun stepTitle(step: Int): String = when (step) {
     STEP_WELCOME -> tr("欢迎")
     STEP_MODEL -> tr("连接模型")
     STEP_PERMISSION -> tr("权限")
+    STEP_VOICE -> tr("语音模型")
     STEP_WAKE -> tr("语音唤醒")
+    STEP_ASSISTANT -> tr("设为默认助手")
     STEP_IDENTITY -> tr("认识你")
     STEP_ROLE -> tr("选个角色")
     STEP_TOUR -> tr("能做什么")
@@ -1128,7 +1139,249 @@ private fun WakeStep(compact: Boolean, gotoWake: Boolean, onGotoWakeChange: (Boo
 }
 
 // ============================================================
-// 5. 认识你
+// 5. 语音模型（STT 识别 + TTS 朗读）
+// ============================================================
+
+/**
+ * 语音模型步：STT（听懂你说的话）+ TTS（把回复念出来）。
+ *
+ * 定位：**真落配置**，跟其它步一样直接写 SttPrefs / TtsTool 的 SharedPreferences——
+ * 走完向导语音输入、语音通话就都能用了，不用再去设置页补。
+ *
+ * 为什么不做成拦人步：连不上网/没密钥时语音本来就能「先打字凑合」，STT/TTS 都是可后补的。
+ * 但**默认值要当场给到能用**：STT 默认什么都不配也可以（手输/打字不受影响），TTS 默认 auto
+ * 会自动落到 Edge/系统引擎，开箱就有声。所以这一步纯辅助、不拦人。
+ */
+@Composable
+private fun VoiceModelStep(compact: Boolean) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val scheme = MaterialTheme.colorScheme
+
+    // 全部 rememberSaveable：分页不预组合相邻页，翻走再翻回来这一页会重新组合，
+    // 普通 remember 会把用户刚填的密钥/引擎清空。这里跟 ModelStep 一个道理。
+    var sttProvider by rememberSaveable { mutableStateOf(SttPrefs.provider(context)) }
+    var sttLang by rememberSaveable { mutableStateOf(SttPrefs.lang(context)) }
+    var sttKey by rememberSaveable { mutableStateOf(SttPrefs.apiKey(context)) }
+    var customBase by rememberSaveable { mutableStateOf(SttPrefs.customBaseUrl(context)) }
+    var customModel by rememberSaveable { mutableStateOf(SttPrefs.customModel(context)) }
+    var ttsEngine by rememberSaveable { mutableStateOf(TtsTool.enginePref(context)) }
+    var testing by rememberSaveable { mutableStateOf(false) }
+    var lastEngine by rememberSaveable { mutableStateOf("") }
+    // 复用同一个实例，别每次点「试听」都 new 一个 TtsTool：两个实例 = 两份引擎状态，声音还可能同时响
+    val ttsTool = remember { TtsTool(context) }
+    DisposableEffect(Unit) { onDispose { ttsTool.shutdown() } }
+
+    StepTitle(
+        Icons.Outlined.RecordVoiceOver, tr("语音模型"),
+        tr("配好这两样，它就能听懂你说话、把回复念出来。不配也能用，只是没声音。"),
+        compact,
+    )
+
+    // —— STT：听懂你说话 ——
+    XtomCard(modifier = Modifier.stepIn(1)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.Mic, null, tint = scheme.primary, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
+                Text(tr("语音识别 (STT)"), color = scheme.onSurface, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text(tr("把你说的话转成文字。默认没配时，语音输入会提示先去配置。"), color = scheme.onSurfaceVariant, fontSize = 10.sp, lineHeight = 14.sp)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+            listOf("siliconflow" to tr("硅基流动(免费)"), "groq" to tr("Groq(免费)"), "custom" to tr("自建API"), "local" to tr("本地")).forEach { (key, label) ->
+                val on = sttProvider == key
+                Surface(onClick = { sttProvider = key; SttPrefs.setProvider(context, key) }, shape = RoundedCornerShape(50), color = if (on) scheme.primary else scheme.surfaceContainerHighest, modifier = Modifier.padding(end = 6.dp)) {
+                    Text(label, color = if (on) scheme.onPrimary else scheme.onSurface, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                }
+            }
+        }
+        when (sttProvider) {
+            "custom" -> {
+                Spacer(Modifier.height(6.dp))
+                XtomField(value = customBase, onValueChange = { customBase = it; SttPrefs.setCustomBaseUrl(context, it) }, label = tr("API Base URL"), modifier = Modifier.fillMaxWidth(), singleLine = true)
+                Spacer(Modifier.height(6.dp))
+                XtomField(value = customModel, onValueChange = { customModel = it; SttPrefs.setCustomModel(context, it) }, label = tr("模型 (如 whisper-1)"), modifier = Modifier.fillMaxWidth(), singleLine = true)
+                Spacer(Modifier.height(6.dp))
+                XtomField(value = sttKey, onValueChange = { sttKey = it; SttPrefs.setApiKey(context, it) }, label = "API Key", modifier = Modifier.fillMaxWidth(), singleLine = true, password = true)
+            }
+            "siliconflow", "groq" -> {
+                Spacer(Modifier.height(6.dp))
+                XtomField(value = sttKey, onValueChange = { sttKey = it; SttPrefs.setApiKey(context, it) }, label = "API Key", modifier = Modifier.fillMaxWidth(), singleLine = true, password = true)
+            }
+            "local" -> {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    tr("本地离线识别，不用密钥。首次用需要下载模型，去 设置 → 模型配置 → 语音识别 里下载即可。"),
+                    color = scheme.onSurfaceVariant, fontSize = 10.sp, lineHeight = 14.sp,
+                )
+            }
+            else -> {}
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(tr("识别语言"), color = scheme.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+        Spacer(Modifier.height(4.dp))
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+            listOf("zh" to "中文", "en" to "English", "mix" to tr("中+英"), "ja" to "日本語", "ko" to "한국어").forEach { (code, label) ->
+                val on = sttLang == code
+                Surface(onClick = { sttLang = code; SttPrefs.setLang(context, code) }, shape = RoundedCornerShape(50), color = if (on) scheme.primary else scheme.surfaceContainerHighest, modifier = Modifier.padding(end = 6.dp)) {
+                    Text(label, color = if (on) scheme.onPrimary else scheme.onSurface, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp))
+                }
+            }
+        }
+    }
+
+    Spacer(Modifier.height(10.dp))
+
+    // —— TTS：把回复念出来 ——
+    XtomCard(modifier = Modifier.stepIn(2)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.RecordVoiceOver, null, tint = scheme.primary, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
+                Text(tr("语音朗读 (TTS)"), color = scheme.onSurface, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text(tr("把回复念出来。默认「自动」会挑一个能用的引擎，开箱就有声。"), color = scheme.onSurfaceVariant, fontSize = 10.sp, lineHeight = 14.sp)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+            listOf("auto" to tr("自动"), "cloud" to tr("云端"), "edge" to tr("Edge在线"), "neural" to tr("离线神经"), "system" to tr("系统")).forEach { (key, label) ->
+                val on = ttsEngine == key
+                Surface(onClick = { ttsEngine = key; TtsTool.setEnginePref(context, key) }, shape = RoundedCornerShape(50), color = if (on) scheme.primary else scheme.surfaceContainerHighest, modifier = Modifier.padding(end = 6.dp)) {
+                    Text(label, color = if (on) scheme.onPrimary else scheme.onSurface, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                }
+            }
+        }
+        if (ttsEngine == "cloud") {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                tr("云端朗读需要先配一个 TTS 模型，去 设置 → 模型配置 → 语音朗读 里填。"),
+                color = scheme.onSurfaceVariant, fontSize = 10.sp, lineHeight = 14.sp,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            XtomButton(
+                onClick = {
+                    testing = true; lastEngine = ""
+                    scope.launch {
+                        val used = try { ttsTool.speak(tr("你好，我是 Arix。"), cardId = null) } catch (_: Exception) { "fail" }
+                        lastEngine = used; testing = false
+                    }
+                },
+                enabled = !testing,
+            ) {
+                Text(if (testing) tr("朗读中…") else tr("试听一句"), fontSize = 12.sp)
+            }
+            if (lastEngine.isNotBlank()) {
+                Spacer(Modifier.width(8.dp))
+                val label = when (lastEngine) {
+                    "neural" -> tr("离线神经 ✓"); "cloud" -> tr("云端 ✓"); "minimax" -> "Minimax ✓"
+                    "edge" -> tr("Edge 在线 ✓"); "system" -> tr("系统语音 ✓"); else -> tr("失败：无可用引擎/无网络")
+                }
+                Text(label, color = if (lastEngine == "fail") scheme.error else scheme.primary, fontSize = 11.sp)
+            }
+        }
+    }
+}
+
+// ============================================================
+// 6. 设为默认助手
+// ============================================================
+
+/**
+ * 设为默认数字助理步：走 [AssistantRole]（RoleManager）。
+ *
+ * 为什么拦人：用户明确要求「设为默认助手」是必做项。设成之后长按主页键 / 系统助手手势
+ * 就能直接召出 Arix（系统托管弹会话，比悬浮窗更稳、还免悬浮窗权限），是语音助手最顺手的一条路。
+ *
+ * 例外放行：有些 ROM 精简包/无 GMS 的机器上**整个助理 role 是空的**，任何 App 都设不上。
+ * 这种时候不拦（拦了就是死路，跳过也没意义），如实说「这台设备不支持」。
+ */
+@Composable
+private fun DefaultAssistantStep(compact: Boolean, onReadyChange: (Boolean) -> Unit) {
+    val context = LocalContext.current
+    val scheme = MaterialTheme.colorScheme
+    // 从系统设置页授权后回来要重算，跟 PermissionStep 同一套：批量刷新 + ON_RESUME 才重查
+    var held by remember { mutableStateOf(AssistantRole.held(context)) }
+    var tick by remember { mutableStateOf(0) }
+
+    val roleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { tick++ }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val obs = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) tick++ }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
+    LaunchedEffect(tick) {
+        held = AssistantRole.held(context)
+        onReadyChange(held || !AssistantRole.available(context))
+    }
+
+    StepTitle(
+        Icons.Outlined.VerifiedUser, tr("设为默认助手"),
+        tr("设成之后，长按主页键或按系统助手手势，就能直接叫出 Arix。这一步设好了才放你往下走。"),
+        compact,
+    )
+
+    XtomCard(modifier = Modifier.stepIn(1)) {
+        when {
+            !AssistantRole.available(context) -> {
+                // 设备压根没有这个 role：不拦，说清楚就好
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.ErrorOutline, null, tint = scheme.secondary, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(tr("这台设备不支持「默认助手」"), color = scheme.onSurface, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            tr("系统里没有数字助理这个角色，任何应用都设不上。唤醒仍可用，走悬浮窗那条路即可。"),
+                            color = scheme.onSurfaceVariant, fontSize = 10.sp, lineHeight = 14.sp,
+                        )
+                    }
+                }
+            }
+            held -> {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.Check, null, tint = scheme.primary, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(tr("Arix 已是默认数字助理"), color = scheme.onSurface, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text(tr("长按主页键就能叫出它。"), color = scheme.onSurfaceVariant, fontSize = 10.sp)
+                    }
+                }
+            }
+            else -> {
+                Text(
+                    tr("点下面的按钮，系统会弹框让你把 Arix 设为默认数字助理。设好之前「下一步」是灰的，但随时可以点左下角跳过。"),
+                    color = scheme.onSurfaceVariant, fontSize = 10.sp, lineHeight = 14.sp,
+                )
+                Spacer(Modifier.height(8.dp))
+                XtomButton(onClick = {
+                    val i = AssistantRole.requestIntent(context)
+                    // 必须经 launcher（startActivityForResult）——系统要靠 calling package 才知道是谁在请求
+                    if (i != null) runCatching { roleLauncher.launch(i) }
+                        .onFailure { AssistantRole.fallbackSettings(context) }   // 起不来就退回设置页，别静默
+                    else AssistantRole.fallbackSettings(context)
+                }) {
+                    Text(tr("设为默认数字助理"), fontSize = 12.sp)
+                }
+            }
+        }
+    }
+
+    if (held) {
+        Spacer(Modifier.height(10.dp))
+        Text(
+            tr("想换回来或改别的：系统设置 → 应用 → 默认应用 → 数字助理。"),
+            color = scheme.onSurfaceVariant, fontSize = 10.sp, lineHeight = 14.sp, modifier = Modifier.stepIn(2),
+        )
+    }
+}
+
+// ============================================================
+// 7. 认识你
 // ============================================================
 
 /**
@@ -1225,7 +1478,7 @@ private fun IdentityStep(compact: Boolean) {
 }
 
 // ============================================================
-// 6. 选个角色
+// 8. 选个角色
 // ============================================================
 
 /**
@@ -1333,7 +1586,7 @@ private fun RoleStep(compact: Boolean) {
 }
 
 // ============================================================
-// 7. 能做什么（导览）
+// 9. 能做什么（导览）
 // ============================================================
 
 @Composable
@@ -1363,7 +1616,7 @@ private fun TourStep(compact: Boolean) {
 }
 
 // ============================================================
-// 8. 完成
+// 10. 完成
 // ============================================================
 
 @Composable
@@ -1374,16 +1627,24 @@ private fun DoneStep(compact: Boolean) {
     var modelName by remember { mutableStateOf<String?>(null) }
     var roleName by remember { mutableStateOf<String?>(null) }
     var micOk by remember { mutableStateOf(false) }
+    var assistantOk by remember { mutableStateOf(false) }
+    var assistantUnsupported by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         val summary = withContext(Dispatchers.IO) {
             val mgr = CloudApiConfigManager(context)
             Triple(
-                (mgr.getActiveByPurpose("chat") ?: mgr.getActive())?.let { "${it.name} · ${it.model}" },
-                AssistantRolePrefs.characterSetting(context).takeIf { it.isNotBlank() },
-                androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED,
+                Triple(
+                    (mgr.getActiveByPurpose("chat") ?: mgr.getActive())?.let { "${it.name} · ${it.model}" },
+                    AssistantRolePrefs.characterSetting(context).takeIf { it.isNotBlank() },
+                    androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED,
+                ),
+                // 默认助理：设备不支持该角色时不算「没配」——向导已经放行了
+                AssistantRole.held(context) || !AssistantRole.available(context),
+                AssistantRole.available(context),
             )
         }
-        modelName = summary.first; roleName = summary.second; micOk = summary.third
+        modelName = summary.first.first; roleName = summary.first.second; micOk = summary.first.third
+        assistantOk = summary.second; assistantUnsupported = summary.third
     }
 
     Spacer(Modifier.height(if (compact) 4.dp else 16.dp))
@@ -1421,6 +1682,14 @@ private fun DoneStep(compact: Boolean) {
         SummaryLine(tr("对话模型"), modelName ?: tr("没配 —— 去 设置 → 模型配置 补上"), ok = modelName != null)
         HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.4f))
         SummaryLine(tr("角色"), roleName ?: tr("默认"), ok = true)
+        HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.4f))
+        SummaryLine(
+            tr("默认助手"),
+            if (assistantOk) {
+                if (assistantUnsupported) tr("设备不支持，跳过") else tr("已是默认数字助理")
+            } else tr("没设成 —— 去 权限 页补"),
+            ok = assistantOk,
+        )
         HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.4f))
         SummaryLine(tr("录音权限"), if (micOk) tr("已开") else tr("没开，只能打字"), ok = micOk)
     }
