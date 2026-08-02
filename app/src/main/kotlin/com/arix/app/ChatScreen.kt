@@ -64,6 +64,7 @@ import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.HourglassEmpty
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Search
@@ -1970,6 +1971,17 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
                 if (messageQueue.isNotEmpty()) AppearAnim { QueuedMessagesCard(messageQueue) { i -> if (i in messageQueue.indices) messageQueue.removeAt(i) } }
             }
          }
+         // 新对话空状态欢迎页：一条消息都还没有时，在列表中央给个「聊点什么」的引导
+         // （仿 ChatGPT 客户端）。只在真·空对话、且没在生成、没在搜索时出现；一旦开场白落下
+         // 或发出第一条消息，chatBubbles 非空，自动让位给消息列表。
+         if (chatBubbles.isEmpty() && !isSending && !searchActive) {
+             EmptyChatWelcome(
+                 identity = identity,
+                 cardName = null,
+                 onPick = { text -> input.fill(text) },
+                 modifier = Modifier.align(Alignment.Center).fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+             )
+         }
              // 滚动位置指示：按设置三档走（详见 ChatNavigator.kt）。
              //   JUMPER=跳转圆钮(零逐帧计算,默认) / CAPSULE=位置胶囊(拖动浮现的小点+点开定位器) / OFF=不显示。
              when (com.arix.app.theme.LocalThemeConfig.current.scrollIndicator) {
@@ -2390,6 +2402,76 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
      permReq?.let { req -> ToolPermissionDialog(req) }
      } // end CompositionLocalProvider(LocalChatAppearance)
  } // end ChatPage
+
+ // ============================================================
+ // EmptyChatWelcome —— 新对话（一条消息都没有）的默认页
+ //
+ // 仿 ChatGPT 客户端的空状态：居中 AI 头像/图标 + 时间问候标题 +
+ // 可点建议卡。标题在绑了角色卡时换成「我是{角色名}」的风味问候；
+ // 建议卡=通用几条 + 按已启用的功能包动态补几条，最多 6 条。
+ // 点建议卡只把内容填进输入框（不直接发送），误触不浪费一次请求。
+ // ============================================================
+ @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+ @Composable private fun EmptyChatWelcome(
+     identity: ChatIdentity,
+     cardName: String?,
+     onPick: (String) -> Unit,
+     modifier: Modifier = Modifier,
+ ) {
+     val scheme = MaterialTheme.colorScheme
+     // 时间问候：早上 5-12 / 下午 12-18 / 晚上其余。remember 一次：
+     // Calendar 新建是组合期开销，空对话低频重组也防御掉；跨小时长挂不更新可接受（下次重组即刷新）。
+     val hour = remember { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) }
+     val greet = when (hour) { in 5..11 -> tr("早上好"); in 12..17 -> tr("下午好"); else -> tr("晚上好") }
+     val title = if (cardName.isNullOrBlank()) "$greet，${tr("有什么可以帮你？")}"
+                 else "$greet，${tr("我是")} $cardName"
+     val subtitle = if (cardName.isNullOrBlank()) tr("随便聊聊，或让我帮你干点活。")
+                    else tr("想聊点什么？")
+     // 建议：通用几条 + 按已启用功能包补，去重后最多 6 条
+     val pkg = com.arix.tool.PackageManager
+     val suggestions = buildList {
+         add(tr("帮我写一段代码"))
+         if (pkg.isEnabled("web_search")) add(tr("帮我搜一下最新消息"))
+         add(tr("帮我总结一下要点"))
+         if (pkg.isEnabled("weather")) add(tr("今天天气怎么样？"))
+         if (pkg.isEnabled("image_gen")) add(tr("帮我画一张图"))
+         if (pkg.isEnabled("memory")) add(tr("回忆一下我记过的事"))
+         if (pkg.isEnabled("diary")) add(tr("帮我写一篇日记"))
+         if (pkg.isEnabled("local_linux") || pkg.isEnabled("shell")) add(tr("用终端帮我跑个命令"))
+         if (pkg.isEnabled("code_runner")) add(tr("帮我运行一段代码"))
+         add(tr("帮我制定一个计划"))
+     }.distinct().take(6)
+
+     Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+         if (!identity.aiAvatar.isNullOrBlank()) {
+             Avatar(identity.aiAvatar, identity.aiName.take(1), size = 56.dp)
+         } else {
+             androidx.compose.material3.Surface(shape = CircleShape, color = scheme.primaryContainer, modifier = Modifier.size(56.dp)) {
+                 Box(contentAlignment = Alignment.Center) {
+                     Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = scheme.onPrimaryContainer, modifier = Modifier.size(28.dp))
+                 }
+             }
+         }
+         Spacer(Modifier.height(14.dp))
+         Text(title, color = scheme.onSurface, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+         Spacer(Modifier.height(6.dp))
+         Text(subtitle, color = scheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+         Spacer(Modifier.height(20.dp))
+         androidx.compose.foundation.layout.FlowRow(
+             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+             verticalArrangement = Arrangement.spacedBy(8.dp),
+             modifier = Modifier.fillMaxWidth(),
+         ) {
+             suggestions.forEach { s ->
+                 androidx.compose.material3.AssistChip(
+                     onClick = { onPick(s) },
+                     label = { Text(s, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                     border = androidx.compose.foundation.BorderStroke(1.dp, scheme.outlineVariant),
+                 )
+             }
+         }
+     }
+ }
 
  // ============================================================
  // ChatInputBar —— 输入条（隔离 input.text 的重组边界）
