@@ -559,6 +559,10 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
     var systemPrompt by remember(active) { mutableStateOf(active?.systemPrompt ?: "") }
     var projectInstruction by remember { mutableStateOf("") }   // 本对话所属「项目」的项目指令（folder→ProjectStore），随对话加载
     var convId by remember { mutableStateOf(conversationId) }
+    // 会话是否已完成加载。欢迎页（新对话空状态）必须等 load 跑完才允许显示：
+    // 否则打开一个**有历史**的对话时，chatBubbles 初始为空 → 欢迎页先冒出来，
+    // load 完成气泡才填充 → 每次进对话都闪现一次「新对话欢迎页」（磁盘 IO + JSON 解析期间可达几百 ms）。
+    var convLoaded by remember { mutableStateOf(false) }
     var continuationText by remember { mutableStateOf<String?>(null) }  // 跨对话续接注入(开新对话带上次)
     var identity by remember { mutableStateOf(ChatIdentity()) }
     var characterSetting by remember { mutableStateOf(com.arix.app.AssistantRolePrefs.characterSetting(context)) }
@@ -1176,7 +1180,8 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
 
      LaunchedEffect(convId) { com.arix.tool.TodoBus.clear(); messageQueue.clear() }   // 切换对话清掉上一段的任务清单/排队
      LaunchedEffect(active, convId) {
-         active?.let { cfg ->
+         convLoaded = false   // 每换一个对话先复位：旧对话的气泡清空瞬间不能露欢迎页
+         try { active?.let { cfg ->
              systemPrompt = cfg.systemPrompt
               val id = convId ?: configManager.conversationManager.repo.getMostRecentActiveId()
                   ?: configManager.conversationManager.create(configId = cfg.id, title = "新对话")
@@ -1222,6 +1227,7 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
              conversationMsgs.clear(); conversationMsgs.addAll(activeMsgs)
              reprojectBubbles(activeMsgs)   // 复用未变气泡 id（重进同对话不整份重键）
          }
+         } finally { convLoaded = true }   // 无论 load 成败都放行欢迎页：空对话该见欢迎页，load 崩了也不至于白屏
      }
  
      // 进入对话时首次定位用即时滚动（不带动画），避免滚动途中把沿途历史消息全部
@@ -1974,7 +1980,11 @@ private val BUBBLE_FADE_OUT = tween<Float>(200, easing = FastOutSlowInEasing)
          // 新对话空状态欢迎页：一条消息都还没有时，在列表中央给个「聊点什么」的引导
          // （仿 ChatGPT 客户端）。只在真·空对话、且没在生成、没在搜索时出现；一旦开场白落下
          // 或发出第一条消息，chatBubbles 非空，自动让位给消息列表。
-         if (chatBubbles.isEmpty() && !isSending && !searchActive) {
+         // 新对话空状态欢迎页：一条消息都还没有时，在列表中央给个「聊点什么」的引导
+        // （仿 ChatGPT 客户端）。只在真·空对话、且没在生成、没在搜索、且 load 已完成时出现；
+        // 一旦开场白落下或发出第一条消息，chatBubbles 非空，自动让位给消息列表。
+        // convLoaded 挡住加载期：打开有历史的对话时气泡是异步填充的，没它欢迎页会先闪一下。
+        if (convLoaded && chatBubbles.isEmpty() && !isSending && !searchActive) {
              EmptyChatWelcome(
                  identity = identity,
                  cardName = null,
