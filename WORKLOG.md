@@ -2,8 +2,8 @@
 
 > 更新时间：2026-08-02（opencode 会话）
 > 工作区：`E:\ArixApache`（独立 git 仓）
-> 最近提交：`7c916ca`（本轮向导两步 + 更新检查指自有仓 + 审查修复）
-> 公开仓库：**https://github.com/XTOM0706/arix-apache**（已推送 main 到 a541506，本轮未 push）
+> 最近提交：`3cd3c4f`（本轮向导两步 + 更新检查指自有仓 + 审查修复）
+> 公开仓库：**https://github.com/XTOM0706/arix-apache**（**已推送**，main=3cd3c4f）
 > 🔴 待办见下方「未完成 / 待续」——**下次做「内置公告功能」**（两个仓都做）。
 
 ## ✅ 2026-08-02 向导同步 + 更新检查改指自有仓（本会话）
@@ -14,7 +14,7 @@
   4. `f6c112a` 设置页「新手向导」描述同步。
   5. `7c916ca` 完成页默认助手汇总取反修复。
 - Apache 版完成页角色读 `AssistantRolePrefs.characterSetting`（无角色卡体系，保留原逻辑）。
-- 编译全绿（assembleDebug）。**未 push**，origin/main 落后 5 提交。
+- 编译全绿（assembleDebug）。**已推送**：origin/main = 3cd3c4f（直连成功）。
 
 ## ✅ 2026-08-02 已推送 + 首发 Release（本会话）
 - push `49dccd3..a541506` 到 origin/main（WORKLOG 存盘，直连成功）
