@@ -501,6 +501,8 @@ private fun WelcomeStep(compact: Boolean) {
         Text(tr("接下来会做这几件事"), color = scheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
         FeatureRow(Icons.Outlined.Bolt, tr("连上一个大模型"), tr("有免费的可以直接试，也可以填自己的密钥"))
+        FeatureRow(Icons.Outlined.RecordVoiceOver, tr("配好语音模型"), tr("它怎么听懂你、怎么开口回你，不配也能用"))
+        FeatureRow(Icons.Outlined.VerifiedUser, tr("设成默认助手"), tr("长按主页键就能叫出它"))
         FeatureRow(Icons.Outlined.Shield, tr("按需要开权限"), tr("每项都写清楚开了能干嘛，不想开就不开"))
         FeatureRow(Icons.Outlined.Face, tr("告诉它你是谁"), tr("名字、称呼、想要什么脾气的助手"))
     }
@@ -1166,8 +1168,11 @@ private fun VoiceModelStep(compact: Boolean) {
     var customBase by rememberSaveable { mutableStateOf(SttPrefs.customBaseUrl(context)) }
     var customModel by rememberSaveable { mutableStateOf(SttPrefs.customModel(context)) }
     var ttsEngine by rememberSaveable { mutableStateOf(TtsTool.enginePref(context)) }
-    var testing by rememberSaveable { mutableStateOf(false) }
-    var lastEngine by rememberSaveable { mutableStateOf("") }
+    // testing/lastEngine 是**瞬时操作状态**，不是用户输入：rememberSaveable 会把中途离开页面时
+    // 还没跑完的「朗读中」状态存下来，回来一看按钮永远卡在「朗读中…」。用普通 remember，
+    // 页面翻走再回来时自动复位。
+    var testing by remember { mutableStateOf(false) }
+    var lastEngine by remember { mutableStateOf("") }
     // 复用同一个实例，别每次点「试听」都 new 一个 TtsTool：两个实例 = 两份引擎状态，声音还可能同时响
     val ttsTool = remember { TtsTool(context) }
     DisposableEffect(Unit) { onDispose { ttsTool.shutdown() } }
@@ -1303,7 +1308,9 @@ private fun VoiceModelStep(compact: Boolean) {
 private fun DefaultAssistantStep(compact: Boolean, onReadyChange: (Boolean) -> Unit) {
     val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
-    // 从系统设置页授权后回来要重算，跟 PermissionStep 同一套：批量刷新 + ON_RESUME 才重查
+    // 从系统设置页授权后回来要重算，跟 PermissionStep 同一套：批量刷新 + ON_RESUME 才重查。
+    // available 是只读的、跑一次就不会变（设备支不支持该角色不随授权变化），记住别每次重组都查 binder
+    val available = remember { AssistantRole.available(context) }
     var held by remember { mutableStateOf(AssistantRole.held(context)) }
     var tick by remember { mutableStateOf(0) }
 
@@ -1317,7 +1324,7 @@ private fun DefaultAssistantStep(compact: Boolean, onReadyChange: (Boolean) -> U
     }
     LaunchedEffect(tick) {
         held = AssistantRole.held(context)
-        onReadyChange(held || !AssistantRole.available(context))
+        onReadyChange(held || !available)
     }
 
     StepTitle(
@@ -1328,7 +1335,7 @@ private fun DefaultAssistantStep(compact: Boolean, onReadyChange: (Boolean) -> U
 
     XtomCard(modifier = Modifier.stepIn(1)) {
         when {
-            !AssistantRole.available(context) -> {
+            !available -> {
                 // 设备压根没有这个 role：不拦，说清楚就好
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Outlined.ErrorOutline, null, tint = scheme.secondary, modifier = Modifier.size(18.dp))
