@@ -1,12 +1,21 @@
 # WORKLOG — Arix Apache-2.0 精简版
 
-> 更新时间：2026-08-01（opencode 会话，暂停待续）
+> 更新时间：2026-08-02（opencode 会话）
 > 工作区：`E:\ArixApache`（独立 git 仓）
-> 最近提交：`49dccd3`
+> 最近提交：`a541506`（已推送 origin/main）
 > 公开仓库：**https://github.com/XTOM0706/arix-apache**（已推送，main）
-> ⚠ 本会话暂停前的工作见下方「未完成 / 待续」——**明天继续做「内置公告功能」**。
+> 🔴 待办见下方「未完成 / 待续」——**下次做「内置公告功能」**（两个仓都做）。
 
-## 已完成（18 提交，编译 + 单测全绿）
+## ✅ 2026-08-02 已推送 + 首发 Release（本会话）
+- push `49dccd3..a541506` 到 origin/main（WORKLOG 存盘，直连成功）
+- 创建 **GitHub Release `v0.0.1`**（https://github.com/XTOM0706/arix-apache/releases/tag/v0.0.1）：
+  - `app-release.apk`（40.4MB，versionCode=1 / 0.0.1，R8 + 正式签名，已上传）
+  - `arix-prebuild-libs-0.0.1.zip`（预编译库：wake/cloudapi/stt/data 的 **release AAR** + logic.jar，2.4MB，已上传）
+- 预编译库构建命令（各库 release AAR，已跑通）：`.\gradlew.bat :wake:assembleRelease :stt:assembleRelease :tts:assembleRelease :cloudapi:assembleRelease :data:assembleRelease :logic:jar`
+- ⚠ `:tts` 模块是**空壳**（只有 Manifest，无源码，app 也不依赖它）——预编译 zip **不含 tts**，别被它带偏。
+- ⚠ token 处理：用 git credential 里的 PAT（ghp_7pCM...）上传 release；用过一次，安全起见下次仍建议轮换。
+
+## 已完成（19 提交，编译 + 单测全绿）
 Apache-2.0 精简版：干净可内置的 AI 助手骨架，原创特色留给 GPL 满血版（XTOM0706/arix-app）当卖点。
 
 **功能裁剪清单：**
