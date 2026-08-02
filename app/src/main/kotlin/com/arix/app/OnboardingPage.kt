@@ -1647,7 +1647,7 @@ private fun DoneStep(compact: Boolean) {
                 ),
                 // 默认助理：设备不支持该角色时不算「没配」——向导已经放行了
                 AssistantRole.held(context) || !AssistantRole.available(context),
-                AssistantRole.available(context),
+                !AssistantRole.available(context),
             )
         }
         modelName = summary.first.first; roleName = summary.first.second; micOk = summary.first.third
