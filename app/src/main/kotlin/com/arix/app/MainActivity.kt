@@ -1296,7 +1296,7 @@ import androidx.compose.ui.unit.IntOffset
                  SettingsRow(Icons.Outlined.BugReport, tr("运行日志"), "app_log", tr("没崩但不对劲的时候看这里：请求失败、工具异常、备份失败、MCP 重连都会记一条。只存在内存里的最近几百条，不写文件不上传，可一键复制或分享给开发者。log / logcat / 日志 / 调试 / 报错。")),
                  SettingsRow(Icons.Outlined.Warning, tr("崩溃报告"), "crash", tr("查看历史崩溃日志，排查问题用。")),
                  SettingsRow(Icons.Outlined.SystemUpdate, tr("检查更新"), "update", tr("手动去 GitHub Releases 比一下有没有新版本，有就给出更新说明和下载链接。默认关，且只在你点按钮时才联网，绝不后台自动检查。update / 升级 / 新版本 / version。")),
-                 SettingsRow(Icons.Outlined.AutoAwesome, tr("新手向导"), "onboarding", tr("重新走一遍开箱引导：连模型、开权限、配唤醒、认识你、选角色，最后一页有当前配置的小结。配置会真写进去，不是只看看。")),
+                 SettingsRow(Icons.Outlined.AutoAwesome, tr("新手向导"), "onboarding", tr("重新走一遍开箱引导：连模型、配语音模型、开权限、设默认助手、认识你、选角色，最后一页有当前配置的小结。配置会真写进去，不是只看看。")),
                  SettingsRow(Icons.Outlined.Info, tr("关于软件"), "about", tr("版本、开源许可(Apache-2.0)与开源致谢(OSS notices)。")),
              ),
          )
