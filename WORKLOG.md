@@ -2,9 +2,19 @@
 
 > 更新时间：2026-08-02（opencode 会话）
 > 工作区：`E:\ArixApache`（独立 git 仓）
-> 最近提交：`a541506`（已推送 origin/main）
-> 公开仓库：**https://github.com/XTOM0706/arix-apache**（已推送，main）
+> 最近提交：`7c916ca`（本轮向导两步 + 更新检查指自有仓 + 审查修复）
+> 公开仓库：**https://github.com/XTOM0706/arix-apache**（已推送 main 到 a541506，本轮未 push）
 > 🔴 待办见下方「未完成 / 待续」——**下次做「内置公告功能」**（两个仓都做）。
+
+## ✅ 2026-08-02 向导同步 + 更新检查改指自有仓（本会话）
+- 提交 `3f5f3ef`~`7c916ca` 共 5 个：
+  1. `3f5f3ef` **更新检查 REPO 改指 `XTOM0706/arix-apache`**——之前一直指向 GPL 的 arix-app，本版更新要查自己的仓（含 v0.0.1 的 app-release.apk）。提示语同步。
+  2. `3bb04bb` **向导同步主仓两步**：语音模型步（STT 引擎/语言/密钥 + TTS 引擎/试听，写 SttPrefs/TtsTool）+ 设为默认助手步（RoleManager，拦下一步，设备不支持放行）。步骤 8→10。
+  3. `961553b` 审查修复（试听瞬时状态改普通 remember、available 提出组合外）。
+  4. `f6c112a` 设置页「新手向导」描述同步。
+  5. `7c916ca` 完成页默认助手汇总取反修复。
+- Apache 版完成页角色读 `AssistantRolePrefs.characterSetting`（无角色卡体系，保留原逻辑）。
+- 编译全绿（assembleDebug）。**未 push**，origin/main 落后 5 提交。
 
 ## ✅ 2026-08-02 已推送 + 首发 Release（本会话）
 - push `49dccd3..a541506` 到 origin/main（WORKLOG 存盘，直连成功）
