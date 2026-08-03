@@ -107,16 +107,20 @@ fun UpdatePromptDialog(context: Context, onDismiss: () -> Unit) {
     val rel = UpdatePrompt.pending.value ?: return
     val current = remember { UpdateChecker.currentVersion(context) }
 
-    // 更新内容：优先显示 AI 翻译；没翻出来就原文。切语言重翻。
-    var translated by remember { mutableStateOf<String?>(null) }
-    var translating by remember { mutableStateOf(false) }
-    LaunchedEffect(curLang, rel.tag) {
-        translated = null
-        if (rel.notes.isBlank()) return@LaunchedEffect
-        if (curLang == "zh") { translated = rel.notes; return@LaunchedEffect }   // 基准中文原文即译文
+    // 更新内容：默认显示原文；非中文界面给出「翻译」按钮，点击才调用 AI 翻译（用户选择，不自动花 token）。
+    // key=rel.tag：pending 被新版本覆盖时译文/翻译中状态随旧版本一起作废，不残留。
+    var translated by remember(rel.tag) { mutableStateOf<String?>(null) }
+    var translating by remember(rel.tag) { mutableStateOf(false) }
+    val showTranslated = translated != null
+    fun doTranslate() {
+        if (translated != null) { translated = null; return }   // 再点一下切回原文
+        if (rel.notes.isBlank()) return
         translating = true
-        translated = translateReleaseNotes(context, rel.notes, curLang)
-        translating = false
+        scope.launch {
+            val r = translateReleaseNotes(context, rel.notes, curLang)
+            translated = r
+            translating = false
+        }
     }
 
     // 下载/安装状态
@@ -180,14 +184,26 @@ fun UpdatePromptDialog(context: Context, onDismiss: () -> Unit) {
                 }
                 if (rel.notes.isNotBlank()) {
                     Spacer(Modifier.height(6.dp))
-                    Text(
+                    // 更新说明支持 markdown + 图片（屏幕内渲染，Coil 异步加载即可）
+                    MarkdownText(
                         if (translating) tr("翻译中…")
-                        else (translated ?: rel.notes),
+                        else if (showTranslated) (translated ?: rel.notes)
+                        else rel.notes,
                         color = scheme.onSurface, fontSize = 12.sp,
                     )
-                    if (translated != null && translated != rel.notes) {
+                    // 非中文界面 + 有原文 → 给「翻译」按钮，用户选择要不要翻（不自动花 token）
+                    if (curLang != "zh" && rel.notes.isNotBlank()) {
                         Spacer(Modifier.height(4.dp))
-                        Text(tr("原文：") + rel.notes.take(120), color = scheme.onSurfaceVariant, fontSize = 9.sp)
+                        TextButton(
+                            enabled = !translating,
+                            onClick = { doTranslate() },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(
+                            if (translating) tr("翻译中…")
+                            else if (showTranslated) tr("显示原文")
+                            else tr("翻译成当前语言"),
+                            color = scheme.primary, fontSize = 12.sp,
+                        ) }
                     }
                 }
 

@@ -24,7 +24,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.arix.app.ui.SettingsHint
 import com.arix.app.ui.SettingsSection
 import com.arix.app.ui.SettingsToggle
@@ -306,6 +309,12 @@ object UpdateChecker {
     var installProgress by remember { mutableStateOf(0f) }
     var installError by remember { mutableStateOf<String?>(null) }
 
+    // 更新说明：默认显示原文；非中文界面给「翻译」按钮，用户选择要不要翻（不自动花 token）
+    // key=result：换版本后译文/翻译中状态随旧版本作废，不残留。
+    var updTranslated by remember(result) { mutableStateOf<String?>(null) }
+    var updTranslating by remember(result) { mutableStateOf(false) }
+    val curLang = com.arix.app.I18n.lang.collectAsState().value.code
+
     // 打开本页就自动查一次（开关开着才查）。和「打开 App 就查」是两处，互不干扰。
     LaunchedEffect(Unit) {
         if (allowed) {
@@ -404,7 +413,32 @@ object UpdateChecker {
                         )
                         if (r.release.notes.isNotBlank()) {
                             Spacer(Modifier.height(6.dp))
-                            Text(r.release.notes, style = MaterialTheme.typography.bodySmall, color = scheme.onSurface)
+                            // 更新说明支持 markdown + 图片（屏幕内渲染，Coil 异步加载即可）
+                            MarkdownText(
+                                if (updTranslating) tr("翻译中…")
+                                else (updTranslated ?: r.release.notes),
+                                color = scheme.onSurface, fontSize = 13.sp,
+                            )
+                            // 非中文界面 + 有原文 → 给「翻译」按钮，用户选择要不要翻（不自动花 token）
+                            if (curLang != "zh") {
+                                Spacer(Modifier.height(4.dp))
+                                TextButton(
+                                    enabled = !updTranslating,
+                                    onClick = {
+                                        if (updTranslated != null) { updTranslated = null; return@TextButton }
+                                        updTranslating = true
+                                        scope.launch {
+                                            updTranslated = translateReleaseNotes(context, r.release.notes, curLang)
+                                            updTranslating = false
+                                        }
+                                    },
+                                ) { Text(
+                                    if (updTranslating) tr("翻译中…")
+                                    else if (updTranslated != null) tr("显示原文")
+                                    else tr("翻译成当前语言"),
+                                    color = scheme.primary, fontSize = 12.sp,
+                                ) }
+                            }
                         }
                         if (r.release.prerelease) {
                             Spacer(Modifier.height(4.dp))
