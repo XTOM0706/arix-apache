@@ -120,6 +120,7 @@ class WakeEnrollment(context: Context) {
             recorder.startRecording()
             while (System.currentTimeMillis() - startedAt < maxRecordMs) {
                 val read = recorder.read(buffer, 0, buffer.size)
+                if (read < 0) break   // 麦克风被抢/出错：负数直接退出，别空转（对齐 VoiceTurn）
                 if (read < FRAME_SIZE) continue
                 val isSpeech = vad.probability(buffer, FRAME_SIZE) >= 0.5f
                 if (isSpeech) {

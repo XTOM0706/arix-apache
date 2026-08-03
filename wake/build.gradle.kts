@@ -62,15 +62,6 @@ dependencies {
     //   → 结论：符号表对得上 ≠ 能跑。ORT 的构建选项（算子集/EP 组合）不是符号级能验的东西，
     //     换 ORT 构建**只能靠真机验**。省这 4MB 不值当拿语音链去赌。
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.24.3")
-    // L2 KWS 判决器（microWakeWord INT8 tflite 流式模型）运行时。见 DESIGN-WAKE.md §4。
-    // ⚠ compileOnly：**运行时不打进包**（`libtensorflowlite_jni.so` 一个就 3.24MB）。
-    // 理由不是"用的人少"，而是**现在一行都跑不到**：`wake/src/main/assets/models/` 是空目录、
-    // 全项目零个 .tflite，KwsDetector.create 必然失败、恒回退 EmbeddingPrototypeDetector。
-    // hi_xtom.tflite 训出来的那天，模型和这个运行时**一起按需下载**（走 RemoteAssets 那条路），
-    // 比现在空占 3.24MB 强。KwsDetector 的代码原样留着，编译照过。
-    // ⚠ 类缺失时抛的是 NoClassDefFoundError（Error，不是 Exception）——接它的地方在 WakeEngines.detectorFor，
-    //   catch 必须是 Throwable。改回 implementation 时这两处注释也一并改。
-    compileOnly("org.tensorflow:tensorflow-lite:2.16.1")
     implementation(libs.androidx.core.ktx)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     // 不要加 org.json:json —— 它的 JSON License 带 "shall be used for Good, not Evil" 附加限制，

@@ -32,11 +32,6 @@ sealed interface WakeTrigger {
         override val label = "power_disconnected"
     }
 
-    /** 加速度计抬腕 / SIGNIFICANT_MOTION 唤醒传感器（增强档，默认关）。 */
-    object Motion : WakeTrigger {
-        override val label = "motion"
-    }
-
     /** 显式呼出（物理键 / 快捷方式 / 通知动作 / AI 工具 / UI 测试）。永远可用的兜底。 */
     data class Explicit(val source: String) : WakeTrigger {
         override val label = "explicit:$source"

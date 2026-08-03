@@ -98,6 +98,9 @@ class WakeService : Service() {
         /** 浮层关闭后重新武装：浮层占麦时不武装（避免抢麦），关掉后延时开窗，才能再次唤醒。 */
         fun notifyOverlayClosed() {
             val e = engineRef ?: return
+            // 无论前台与否都先复位占麦标志，否则 App 在前台关掉浮层（如点「进入对话」）会永远卡 true、
+            // 下次后台命中不再重武装。
+            e.assistantActive = false
             rearmHandler.postDelayed({
                 if (isRunning && !AppForeground.isForeground) {
                     com.arix.wake.WakeLog.d("浮层关闭，重新武装唤醒")
@@ -244,6 +247,10 @@ class WakeService : Service() {
 
     private fun onWake(det: WakeDetection) {
         updateNotification("已唤醒！(相似度 ${String.format(Locale.US, "%.2f", det.score)})")
+        // 息屏/睡眠中被唤醒：屏必须亮起来，否则浮层/助手弹了也看不见。
+        // FLAG_TURN_SCREEN_ON / setTurnScreenOn 只在窗口已显示时有效，深睡眠(Doze)里光靠它不一定亮屏——
+        // 用一次短暂的「亮屏唤醒锁」(ACQUIRE_CAUSES_WAKEUP) 把屏幕真正点亮（需 WAKE_LOCK 权限，Manifest 已加）。
+        wakeScreenLock()
         // 在应用内不唤醒：主 app 已在前台就不弹助手——但仍重新武装，便于连续测试/再次唤醒
         if (AppForeground.isForeground) {
             com.arix.wake.WakeLog.d("应用在前台，不弹助手（在应用内不唤醒）；稍后重新武装可再次命中")
@@ -264,6 +271,7 @@ class WakeService : Service() {
         if (km?.isKeyguardLocked == true) {
             if (lockScreenWakeEnabled(this)) {
                 com.arix.wake.WakeLog.d("锁屏唤起：走 Activity+全屏通知越锁屏（悬浮窗越不过 keyguard）")
+                engine?.assistantActive = true   // Activity 占麦：命中后别立刻重开麦
                 showOverlayViaActivity()
             } else {
                 com.arix.wake.WakeLog.d("锁屏唤起已关闭，等解锁后再唤醒；稍后重新武装")
@@ -275,10 +283,12 @@ class WakeService : Service() {
         val canOverlay = Build.VERSION.SDK_INT < Build.VERSION_CODES.M || android.provider.Settings.canDrawOverlays(this)
         if (canOverlay) {
             // 首选：WindowManager 悬浮窗——后台任意亮屏场景可靠弹出，不受 Activity 启动限制
+            engine?.assistantActive = true   // 浮层占麦：命中后别立刻重开麦，等浮层关闭再武装
             WakeOverlayHost.show(this)
         } else {
             // 未授予悬浮窗权限：退回 Activity + 全屏 intent 通知（后台/锁屏可弹，亮屏解锁下多半只出通知）
             com.arix.wake.WakeLog.d("⚠ 未授予悬浮窗权限，退回全屏通知拉起 Activity（建议去唤醒页授权悬浮窗）")
+            engine?.assistantActive = true   // Activity 占麦：命中后别立刻重开麦
             showOverlayViaActivity()
         }
     }
@@ -367,6 +377,29 @@ class WakeService : Service() {
 
     private fun isScreenInteractive(): Boolean =
         (getSystemService(PowerManager::class.java))?.isInteractive == true
+
+    /**
+     * 息屏唤醒时把屏幕真正点亮。深睡眠(Doze)下 `FLAG_TURN_SCREEN_ON`/`setTurnScreenOn` 不一定生效，
+     * 这里补一次短暂的「亮屏唤醒锁」：`ACQUIRE_CAUSES_WAKEUP` 让 acquire 的瞬间就亮屏，
+     * `ON_AFTER_RELEASE` 释放后保持一小会儿（配合浮层/Activity 的 SHOW_WHEN_LOCKED 盖上去）。
+     * 需要 WAKE_LOCK 权限（Manifest 已声明）；权限被回收时静默跳过，不影响唤醒流程本身。
+     */
+    private fun wakeScreenLock() {
+        if (isScreenInteractive()) return
+        try {
+            @Suppress("DEPRECATION")
+            val wl = (getSystemService(PowerManager::class.java))?.newWakeLock(
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                    PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                    PowerManager.ON_AFTER_RELEASE,
+                "arix:wake-screen",
+            ) ?: return
+            wl.acquire(8000)
+            rearmHandler.postDelayed({ runCatching { if (wl.isHeld) wl.release() } }, 8500)
+        } catch (e: Exception) {
+            com.arix.wake.WakeLog.d("亮屏唤醒锁失败(可能缺 WAKE_LOCK 权限): ${e.message}")
+        }
+    }
 
     private fun isCharging(): Boolean =
         (getSystemService(BatteryManager::class.java))?.isCharging == true

@@ -54,6 +54,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 实时胶囊（阶段 A）：ColorOS 16 / Android 16 流体云走 Google Live Updates 的「提升常驻通知」，
          需此权限（配合 POST_NOTIFICATIONS）。低版本/其它 ROM 无副作用。 -->

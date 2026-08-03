@@ -52,10 +52,6 @@
 -dontwarn androidx.health.connect.**
 -keep class com.google.zxing.** { *; }
 -dontwarn org.scilab.forge.jlatexmath.**
-# TFLite：wake 模块里是 compileOnly（KWS 模型还没训出来，运行时不打进包，见 wake/build.gradle.kts）。
-# KwsDetector 引用它的类而包里没有 → R8 必然报 missing class，这里静默。
-# ⚠ 只静默、不 keep：keep 一个不存在的类没有意义，缺类是**运行时**由 WakeEngines 兜 Throwable 回退的。
--dontwarn org.tensorflow.lite.**
 # OkHttp/Okio/协程 的常规静默项
 -dontwarn okhttp3.**
 -dontwarn okio.**

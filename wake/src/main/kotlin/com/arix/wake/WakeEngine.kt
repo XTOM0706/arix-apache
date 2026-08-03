@@ -40,4 +40,11 @@ interface WakeEngine {
 
     /** 错误回调。 */
     var onError: ((String) -> Unit)?
+
+    /**
+     * 助手界面是否占用麦克风。唤醒命中后 App 侧弹出浮层 / Activity / 数字助手会话期间置 true：
+     * 命中回调 [onWake] 结束后**不**自动重开麦（避免与助手抢麦），等浮层/会话关闭由
+     * [com.arix.app.WakeService.notifyOverlayClosed] 置回 false 并 [submitTrigger] 重新武装。
+     */
+    var assistantActive: Boolean
 }

@@ -131,7 +131,13 @@ internal class WakeAudioPipeline(
             loop@ while (running) {
                 if (!currentCoroutineContext().isActive) break
                 val read = audioRecord.read(readBuf, 0, readBuf.size)
-                if (read <= 0) continue
+                if (read < 0) {
+                    // 麦克风被抢/出错：read 返回负数（ERROR_DEAD_OBJECT 等）。continue 会 100% CPU
+                    // 空转，必须直接退出循环（对齐 VoiceTurn）。
+                    onError("麦克风读取失败: $read")
+                    break
+                }
+                if (read == 0) continue
 
                 // 静音探针（在整块 read 粒度上判断，代价可忽略）
                 var allZero = true

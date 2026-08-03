@@ -778,7 +778,8 @@ private fun recordUntilStopped(stopFlag: java.util.concurrent.atomic.AtomicBoole
         recorder.startRecording()
         while (!stopFlag.get()) {
             val read = recorder.read(buf, 0, buf.size)
-            if (read <= 0) continue
+            if (read < 0) break   // 麦克风被抢/出错：负数直接退出，别空转烧 CPU（对齐 VoiceTurn）
+            if (read == 0) continue
             var sum = 0.0
             for (i in 0 until read) { val v = buf[i] / 32768f; samples.add(v); sum += v * v }
             val rms = sqrt(sum / read).toFloat()

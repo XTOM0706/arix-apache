@@ -30,13 +30,6 @@ ONNX Runtime  (com.microsoft.onnxruntime:onnxruntime-android)
   MIT License
   https://github.com/microsoft/onnxruntime
 
-LiteRT / TensorFlow Lite  (org.tensorflow:tensorflow-lite)
-  Copyright (c) The TensorFlow Authors
-  Apache License 2.0
-  https://github.com/tensorflow/tensorflow
-
-microWakeWord  (wake-word model + training framework; model bundled as
-                wake/src/main/assets/models/hi_xtom.tflite when provided)
-  Apache License 2.0
-  https://github.com/OHF-Voice/micro-wake-word
-  https://github.com/esphome/micro-wake-word-models
+(Third-party components only. KWS TFLite path (TensorFlow Lite + microWakeWord
+model) was never shipped -- the model was never trained -- and the dependency and
+code were removed.)

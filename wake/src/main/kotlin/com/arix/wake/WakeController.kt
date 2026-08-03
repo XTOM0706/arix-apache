@@ -55,6 +55,10 @@ internal class WakeController(
     override var onWake: ((WakeDetection) -> Unit)? = null
     override var onError: ((String) -> Unit)? = null
 
+    /** 助手浮层/会话占用麦克风期间为 true（由 WakeService 在命中弹浮层前置位，关闭后复位）。 */
+    @Volatile
+    override var assistantActive = false
+
     private var worker: WakeWorker? = null
     private var workerJob: Job? = null
     private var windowJob: Job? = null
@@ -84,11 +88,14 @@ internal class WakeController(
             is WakeTrigger.ScreenOn ->
                 if (config.enableScreenOnGate && autoGateAllowed()) openWindow()
 
-            is WakeTrigger.Motion ->
-                if (config.enableMotionGate && autoGateAllowed()) openWindow()
-
             is WakeTrigger.Explicit ->
-                openWindow() // 显式呼出永远开窗（OFF 已在上面挡掉）
+            // 显式呼出 / 浮层关闭后重新武装：常听策略直接回 ALWAYS_ON，否则按窗口开麦
+            if (config.powerPolicy == WakePowerPolicy.ALWAYS_ON ||
+                (charging && config.powerPolicy == WakePowerPolicy.ALWAYS_ON_WHEN_CHARGING)) {
+                enterAlwaysOn()
+            } else {
+                openWindow()
+            }
 
             is WakeTrigger.PowerConnected -> {
                 charging = true
@@ -113,9 +120,11 @@ internal class WakeController(
         setState(WakeState.IDLE)
     }
 
-    /** 自动门控（亮屏/抬腕）是否被当前策略允许。仅显式模式禁自动开窗；常听中忽略新窗口。 */
+    /** 自动门控（亮屏/抬腕）是否被当前策略允许。仅显式模式禁自动开窗；常听中忽略新窗口；助手占麦中不开窗。 */
     private fun autoGateAllowed(): Boolean =
-        config.powerPolicy != WakePowerPolicy.EXPLICIT_ONLY && _state != WakeState.ALWAYS_ON
+        config.powerPolicy != WakePowerPolicy.EXPLICIT_ONLY &&
+            _state != WakeState.ALWAYS_ON &&
+            !assistantActive
 
     // --- 状态转移（均在 @Synchronized 入口内调用） ---
 
@@ -183,10 +192,11 @@ internal class WakeController(
         } catch (e: Exception) {
             Log.e(TAG, "onWake callback error: ${e.message}")
         }
-        // 命中后重新武装：持续常听 / 充电常听则回 ALWAYS_ON，否则回 IDLE 等下次门控
+        // 命中后重新武装：持续常听 / 充电常听则回 ALWAYS_ON，否则回 IDLE 等下次门控。
+        // 助手浮层正在占麦（assistantActive）时不重开麦，等浮层关闭后 WakeService 再 submitTrigger 武装。
         val rearmAlwaysOn = config.powerPolicy == WakePowerPolicy.ALWAYS_ON ||
             (charging && config.powerPolicy == WakePowerPolicy.ALWAYS_ON_WHEN_CHARGING)
-        if (started && rearmAlwaysOn) {
+        if (started && rearmAlwaysOn && !assistantActive) {
             startWorker()
             setState(WakeState.ALWAYS_ON)
         } else {

@@ -58,8 +58,6 @@ private const val DEVELOPER_EMAIL = "tomrz666@qq.com"
         "ONNX Runtime" to "MIT",
         "sherpa-onnx（语音识别）" to "Apache-2.0",
         "Silero VAD 模型" to "MIT",
-        "microWakeWord（唤醒模型/框架）" to "Apache-2.0",
-        "TensorFlow Lite / LiteRT" to "Apache-2.0",
         "Jetpack Compose · AndroidX" to "Apache-2.0",
         "Kotlin · Coroutines" to "Apache-2.0",
         "Coil（图片加载）" to "Apache-2.0",

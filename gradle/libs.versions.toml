@@ -44,7 +44,6 @@ gson = "2.10.1"
 hjson = "3.0.0"
 jieba = "1.0.2"
 hnswlib = "0.0.46"
-tensorflow = "2.10.0"
 room = "2.8.4"
 commons-compress-v2 = "1.24.0"
 junrar = "7.5.5"
@@ -174,7 +173,6 @@ hnswlib-core = { group = "com.github.jelmerk", name = "hnswlib-core", version.re
 hnswlib-utils = { group = "com.github.jelmerk", name = "hnswlib-utils", version.ref = "hnswlib" }
 
 # Machine learning
-tensorflow-lite = { group = "org.tensorflow", name = "tensorflow-lite", version.ref = "tensorflow" }
 mediapipe-tasks-text = { group = "com.google.mediapipe", name = "tasks-text", version.ref = "mediapipe" }
 
 # Database

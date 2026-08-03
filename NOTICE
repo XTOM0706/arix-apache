@@ -20,12 +20,6 @@ sherpa-onnx (speech recognition, vendored) — Apache-2.0 — k2-fsa / Xiaomi
 Silero VAD model (silero_vad.onnx) — MIT — Silero Team
   https://github.com/snakers4/silero-vad
 
-microWakeWord (wake word model/framework) — Apache-2.0 — OHF-Voice / ESPHome
-  https://github.com/OHF-Voice/micro-wake-word
-
-TensorFlow Lite / LiteRT (org.tensorflow:tensorflow-lite) — Apache-2.0 — The TensorFlow Authors
-  https://github.com/tensorflow/tensorflow
-
 Jetpack Compose · AndroidX — Apache-2.0 — The Android Open Source Project
 Kotlin · Kotlin Coroutines — Apache-2.0 — JetBrains
 Coil (image loading) — Apache-2.0 — Coil Contributors
