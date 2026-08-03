@@ -2,9 +2,10 @@
 
 > 更新时间：2026-08-03（opencode 会话）
 > 工作区：`E:\ArixApache`（独立 git 仓）
-> 最近提交：`bec6dac`（升 v0.0.2 + 移除竞品监控，**未 push**）
-> 公开仓库：**https://github.com/XTOM0706/arix-apache**（main=6522c64，本地领先 3 提交待 push）
-> 🔴 **待办：push + tag + release 完成 v0.0.2 发布**（网络到 GitHub 443 不通，代理未开，阻塞中）
+> 最近提交：`11ad822`（WORKLOG）· **已 push**
+> 公开仓库：**https://github.com/XTOM0706/arix-apache**（**v0.0.2 已发布**，main=11ad822）
+> ✅ **v0.0.2 发布完成**（2026-08-03）：push + tag + Release 全绿，资产 app-release.apk（40.4MB）
+> 🔴 待办：无。下次跟进看主仓方向。
 
 ## ✅ 2026-08-03 升 v0.0.2 + 移除竞品监控（本会话，**待 push**）
 
@@ -21,11 +22,12 @@
 ### 同步
 - 主仓 `bf866b6`（marketwatch allowBackup 修复）随模块删除一并处理（该行改动随删除消失）。
 
-### 🔴 发布待完成（网络恢复后执行）
-1. `git push origin main`（本地领先 origin 3 提交：0c8777b + b6482b3 + bec6dac）
-2. `git tag v0.0.2` && `git push origin v0.0.2`
-3. `gh release create v0.0.2 --repo XTOM0706/arix-apache --title "Arix Apache v0.0.2"` + 上传 `app-release.apk`（+ 可选 prebuild-libs zip，参考 v0.0.1 资产）
-4. GITHUB_TOKEN 在 git credential（`ghp_...`），gh 需 `$env:GITHUB_TOKEN` 注入 + `--repo XTOM0706/arix-apache`
+### ✅ 发布已完成（2026-08-03）
+1. ✅ `git push origin main`（6522c64..11ad822）
+2. ✅ `git tag v0.0.2` && push
+3. ✅ `gh release create v0.0.2 --repo XTOM0706/arix-apache` + 上传 `app-release.apk`（40.4MB）
+   - https://github.com/XTOM0706/arix-apache/releases/tag/v0.0.2
+4. GITHUB_TOKEN 在 git credential（`ghp_...`），gh 需 `$env:GH_TOKEN` 注入（不是 GITHUB_TOKEN）+ `--repo XTOM0706/arix-apache`
 
 ### 网络状态
 - 公网通（baidu.com 443 OK），**GitHub 443 不通**（TCP 超时 + DNS 解析不到），代理 7890/7897/1080 等全关。
