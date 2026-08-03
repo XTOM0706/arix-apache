@@ -1,10 +1,35 @@
 # WORKLOG — Arix Apache-2.0 精简版
 
-> 更新时间：2026-08-02（opencode 会话）
+> 更新时间：2026-08-03（opencode 会话）
 > 工作区：`E:\ArixApache`（独立 git 仓）
-> 最近提交：`3cd3c4f`（本轮向导两步 + 更新检查指自有仓 + 审查修复）
-> 公开仓库：**https://github.com/XTOM0706/arix-apache**（**已推送**，main=3cd3c4f）
-> 🔴 待办见下方「未完成 / 待续」——**下次做「内置公告功能」**（两个仓都做）。
+> 最近提交：`bec6dac`（升 v0.0.2 + 移除竞品监控，**未 push**）
+> 公开仓库：**https://github.com/XTOM0706/arix-apache**（main=6522c64，本地领先 3 提交待 push）
+> 🔴 **待办：push + tag + release 完成 v0.0.2 发布**（网络到 GitHub 443 不通，代理未开，阻塞中）
+
+## ✅ 2026-08-03 升 v0.0.2 + 移除竞品监控（本会话，**待 push**）
+
+### 移除竞品监控（用户拍板：监视别人的东西，开源版根本不需要）
+- **删 marketwatch 模块**：独立 APK（`com.arix.marketwatch`，竞品/产品监控小 App，WebView 拼 competitor_watch.py --html 产物）。3 个源文件 + settings.gradle.kts 去掉 `include(":marketwatch")`。
+- **删 tools/competitor_watch.py + competitor_watch.state.json**：竞品监控脚本，marketwatch 删了它们也没用了。
+- 提交 `bec6dac`。`assembleRelease` 验证通过（app 不依赖 marketwatch，删后 206 任务 up-to-date）。
+
+### 版本号
+- `versionCode 1→2`，`versionName "0.0.1"→"0.0.2"`（`app/build.gradle.kts`）。
+- 注释更新：同线升级仍需 versionCode 递增以便覆盖；仍取低值保证满血版可覆盖。
+- `app-release.apk` 已构建（40.4MB，R8 release，`app/build/outputs/apk/release/app-release.apk`）。
+
+### 同步
+- 主仓 `bf866b6`（marketwatch allowBackup 修复）随模块删除一并处理（该行改动随删除消失）。
+
+### 🔴 发布待完成（网络恢复后执行）
+1. `git push origin main`（本地领先 origin 3 提交：0c8777b + b6482b3 + bec6dac）
+2. `git tag v0.0.2` && `git push origin v0.0.2`
+3. `gh release create v0.0.2 --repo XTOM0706/arix-apache --title "Arix Apache v0.0.2"` + 上传 `app-release.apk`（+ 可选 prebuild-libs zip，参考 v0.0.1 资产）
+4. GITHUB_TOKEN 在 git credential（`ghp_...`），gh 需 `$env:GITHUB_TOKEN` 注入 + `--repo XTOM0706/arix-apache`
+
+### 网络状态
+- 公网通（baidu.com 443 OK），**GitHub 443 不通**（TCP 超时 + DNS 解析不到），代理 7890/7897/1080 等全关。
+- 需用户开代理（clash 等）或换网络后重试。直连或代理 push 都可能超时 2-3 分钟，耐心等。
 
 ## ✅ 2026-08-02 向导同步 + 更新检查改指自有仓（本会话）
 - 提交 `3f5f3ef`~`7c916ca` 共 5 个：
