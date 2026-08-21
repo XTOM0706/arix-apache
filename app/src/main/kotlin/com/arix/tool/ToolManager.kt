@@ -237,11 +237,21 @@ object ToolManager {
     }
 
     suspend fun execute(call: ToolCall): ToolResult {
+        // 工具名为空/null 的历史脏数据（模型从残缺历史复刻出的空名调用）：直接给明确反馈，
+        // 别报「工具未找到: null」这种让用户和模型都摸不着头脑的文案。
+        if (call.name.isBlank()) {
+            com.arix.app.AppLog.e("Tool", "收到工具名为空的调用 arguments=${call.arguments}")
+            return ToolResult("工具名称为空：这通常来自历史对话里一条残缺的工具调用记录（老版本数据），" +
+                "这一条没有可执行的内容。请忽略它，或基于现有信息继续作答。", isError = true, failKind = "not_found")
+        }
         // 兼容模型漏了市场包工具的 op_ 前缀 / 按短名叫（op_pkg_tool ←→ pkg_tool ←→ tool）：唯一匹配才认，避免误解析。
         val tool = tools[call.name] ?: run {
             val cands = tools.keys.filter { it == "op_" + call.name || it.endsWith("_" + call.name) }
             if (cands.size == 1) tools[cands[0]] else null
-        } ?: return ToolResult("工具未找到: ${call.name}", isError = true, failKind = "not_found")
+        } ?: return ToolResult(
+            "这个工具调用不对：没有叫「${call.name}」的工具。可能是工具名拼错了、或这个工具当前不可用（所在功能包没开/本机不支持）。" +
+                "对照工具列表里的准确名字重新调用；参数我已经看到（${call.arguments}），名字对上了就能执行。",
+            isError = true, failKind = "not_found")
             .also { logStillborn(call, ToolActivityBus.Status.ERROR, it.content) }
         // 包没开就别真跑——但要说清「不是你没这能力，是没开」，并给出申请的路。
         // **用 tool.name 而不是 call.name**：上面的短名 fallback 会把 `translate` 解析到真实工具

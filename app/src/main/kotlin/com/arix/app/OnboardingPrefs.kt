@@ -47,3 +47,22 @@ object OnboardingGate {
         show.value = false
     }
 }
+
+// ============================================================
+// 向导结束后的「真实界面点位引导」标记。
+//
+// 向导正常走完（留在聊天页）→ arm()：主界面渲染出来后叠一层蒙层，
+// 用光圈在真实 UI 上圈出「输入框、抽屉菜单」等关键点位，教用户点哪里能干什么。
+// 只有 armed && !done 才显示 → 首次走完与重跑向导都能触发；跳过向导/跳去别的页不触发。
+// 蒙层看完或点「跳过引导」→ markDone()。重跑向导时 arm() 会把 done 一起清掉，保证再触发。
+// ============================================================
+object FirstUseGuidePrefs {
+    private const val PREFS = "xtom_first_use_guide"
+
+    private fun p(c: Context) = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    fun armed(c: Context): Boolean = p(c).getBoolean("armed", false)
+    fun done(c: Context): Boolean = p(c).getBoolean("done", false)
+    fun arm(c: Context) = p(c).edit().putBoolean("armed", true).putBoolean("done", false).apply()
+    fun markDone(c: Context) = p(c).edit().putBoolean("done", true).apply()
+}

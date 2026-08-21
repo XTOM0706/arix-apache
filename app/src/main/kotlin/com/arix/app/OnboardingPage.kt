@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -33,7 +35,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Check
@@ -53,7 +54,6 @@ import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Timeline
 import androidx.compose.material.icons.outlined.VerifiedUser
-import androidx.compose.material.icons.outlined.Waves
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -124,6 +124,10 @@ import kotlinx.coroutines.withContext
 //   认识你 → IdentityPrefs + UserPreferences
 //   选角色 → CharacterCardManager（Room character_cards）
 //
+// 导览步（STEP_TOUR）不只是「能做什么」的静态清单：每条写清「在哪找 + 点了能干嘛」，
+// 并带一个「去看看」按钮，点了直接结束向导、落到那个页面（复用 onFinish 的 route）。
+// 完成页（STEP_DONE）在配置小结下加一排「现在去试试」的快捷入口，同一个机制。
+//
 // 显示与否由 [OnboardingGate] 管，MainActivity 在 setContent 里二选一渲染（不叠在 MainScreen 上：
 // 叠着的话背后整个聊天树还在组合/绘制，白烧一份帧预算）。
 //
@@ -164,11 +168,14 @@ private const val STEP_DONE = 9
 private const val STEP_COUNT = 10
 
 /**
- * @param onFinish 走完/跳过时回调。参数是「结束后想直接打开的页面路由」，没有就传 null
- *                 （唤醒那步的「结束后去录唤醒词」用它；由 MainActivity 落到 NavRetain）。
+ * @param onFinish 结束向导时回调。
+ *                 route：结束后想直接打开的页面路由，没有就传 null（唤醒那步的「结束后去录唤醒词」用它；
+ *                 导览/完成页的「去看看 / 现在去试试」也用；由 MainActivity 落到 NavRetain）。
+ *                 completed：是否**正常走完**（区别于左下角「跳过」）。MainActivity 只在
+ *                 completed && route == null（留在聊天页收尾）时触发结束后的界面点位引导蒙层。
  */
 @Composable
-fun OnboardingPage(onFinish: (String?) -> Unit) {
+fun OnboardingPage(onFinish: (String?, Boolean) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val scheme = MaterialTheme.colorScheme
@@ -191,7 +198,10 @@ fun OnboardingPage(onFinish: (String?) -> Unit) {
     // 按钮翻页带 FullMotion：手表上「系统动画缩放=0」很常见，不加的话 animateScrollToPage 直接瞬移，
     // 下面那套视差/入场全白搭（手指拖动不受影响，因为那是跟手的，不走动画系统）。
     fun go(page: Int) { scope.launch(FullMotion) { pager.animateScrollToPage(page.coerceIn(0, STEP_COUNT - 1)) } }
-    fun finish() = onFinish(pendingRoute)
+    // 结束向导。completed=true 表示「正常走完」（区别于跳过、也区别于中途点「去看看」跳走），
+    // MainActivity 据此决定要不要在结束后触发界面点位引导（只有留在聊天页收尾才触发）。
+    fun finishWith(route: String?, completed: Boolean) = onFinish(route, completed)
+    fun finish() = finishWith(pendingRoute, true)
 
     // 系统返回 = 上一步。第一页不接管，让它照常退出 App（首启时用户想走就该能走）。
     BackHandler(enabled = pager.currentPage > 0) { go(pager.currentPage - 1) }
@@ -244,8 +254,8 @@ fun OnboardingPage(onFinish: (String?) -> Unit) {
                         STEP_ASSISTANT -> DefaultAssistantStep(compact = compact, onReadyChange = { assistantReady = it })
                         STEP_IDENTITY -> IdentityStep(compact)
                         STEP_ROLE -> RoleStep(compact)
-                        STEP_TOUR -> TourStep(compact)
-                        STEP_DONE -> DoneStep(compact)
+                        STEP_TOUR -> TourStep(compact, onFinish = { r -> finishWith(r, false) })
+                        STEP_DONE -> DoneStep(compact, onFinish = { r -> finishWith(r, false) })
                     }
                     }
                     Spacer(Modifier.height(16.dp))
@@ -253,12 +263,14 @@ fun OnboardingPage(onFinish: (String?) -> Unit) {
             }
 
             // ---- 底部：跳过 / 上一步 / 下一步 ----
+            // imePadding：MainActivity 已是 ADJUST_NOTHING，窗口不缩 —— 键盘弹出时让这条操作栏
+            // 浮到键盘上方（标题/进度条/分页卡片保持原位不动），不然填密钥时「下一步」被键盘盖住。
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = if (compact) 6.dp else 10.dp),
+                Modifier.fillMaxWidth().imePadding().padding(horizontal = 12.dp, vertical = if (compact) 6.dp else 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (pager.currentPage < STEP_DONE) {
-                    TextButton(onClick = { finish() }) {
+                    TextButton(onClick = { finishWith(null, false) }) {
                         Text(tr("跳过"), color = scheme.onSurfaceVariant, fontSize = 12.sp)
                     }
                 } else {
@@ -363,7 +375,7 @@ private fun stepTitle(step: Int): String = when (step) {
     STEP_ASSISTANT -> tr("设为默认助手")
     STEP_IDENTITY -> tr("认识你")
     STEP_ROLE -> tr("选个角色")
-    STEP_TOUR -> tr("能做什么")
+    STEP_TOUR -> tr("去哪找")
     else -> tr("完成")
 }
 
@@ -1593,32 +1605,102 @@ private fun RoleStep(compact: Boolean) {
 }
 
 // ============================================================
-// 9. 能做什么（导览）
+// 9. 去哪找（导览）
 // ============================================================
 
+/**
+ * 导览条目：不只讲「有什么」，还写清「在哪找 + 点了能干嘛」。
+ * [route] 是「去看看」按钮的目标页面，点了直接结束向导、落到那一页。
+ * title/desc/where 都 tr() 过；图标从文件头 import 的集合里挑，别再新增 import 行。
+ */
+private class TourItem(
+    val icon: ImageVector,
+    val title: String,
+    val desc: String,
+    val where: String,
+    val route: String,
+)
+
 @Composable
-private fun TourStep(compact: Boolean) {
-    val scheme = MaterialTheme.colorScheme
+private fun TourStep(compact: Boolean, onFinish: (String?) -> Unit) {
     StepTitle(
-        Icons.Outlined.Info, tr("它还能做这些"),
-        tr("下面这些都已经装好了，不用另外配。知道在哪就行，用不上可以先放着。"),
+        Icons.Outlined.Info, tr("去哪找"),
+        tr("下面这些都已经装好了，不用另外配。每条都写了在哪找、点了能干嘛；想马上试试就点「去看看」。"),
         compact,
     )
-    XtomCard(modifier = Modifier.stepIn(1)) {
-        FeatureRow(Icons.Outlined.Memory, tr("记忆"), tr("聊过的事会自己记下来，下次接着聊不用重讲。在「记忆」页能看、能改、能删。"))
-        FeatureRow(Icons.Outlined.Settings, tr("工具"), tr("查天气、订日程、发消息、改文件、跑命令。每次动手前都会问你一句，不想让它做就拒绝。"))
-        FeatureRow(Icons.Outlined.Public, tr("联网搜索"), tr("默认就能搜，不用配密钥。要更强的检索可以在「联网搜索」里接自己的引擎。"))
+
+    // 放 remember 里：切语言时 XtomTheme 重建整棵树，remember 重跑译文才跟得上
+    val groups = remember {
+        listOf(
+            listOf(
+                TourItem(Icons.Outlined.Memory, tr("记忆"), tr("聊过的事自动记下来，下次接着聊；能看、能改、能删。"), tr("在哪：左边抽屉 → 记忆"), "memory"),
+                TourItem(Icons.Outlined.AutoAwesome, tr("角色卡"), tr("换说话方式和做事习惯；想再建别的角色也在这。"), tr("在哪：左边抽屉 → 角色卡"), "cards"),
+                TourItem(Icons.Outlined.Mic, tr("语音唤醒"), tr("喊一声就把它叫出来；唤醒词在这里录。"), tr("在哪：左边抽屉 → 语音唤醒"), "wake"),
+                TourItem(Icons.Outlined.Face, tr("个性化"), tr("你的名字、它怎么称呼你、说话的语气。"), tr("在哪：设置 → 个性化"), "personalization"),
+            ),
+            listOf(
+                TourItem(Icons.Outlined.Shield, tr("权限管理"), tr("哪些工具能用、哪些要先问你、哪些直接禁掉。"), tr("在哪：设置 → 权限管理"), "permissions"),
+                TourItem(Icons.Outlined.Bolt, tr("模型配置"), tr("换模型、改接口、填密钥；语音识别和朗读的模型也在这。"), tr("在哪：设置 → 模型配置"), "config"),
+                TourItem(Icons.Outlined.Timeline, tr("活动中心"), tr("它每次动手都记一笔：调了什么、成没成。"), tr("在哪：左边抽屉 → 活动中心"), "activity_center"),
+                TourItem(Icons.Outlined.Terminal, tr("终端"), tr("装了独立终端 App 后，AI 能真的在手机上跑命令。"), tr("在哪：左边抽屉 → 终端"), "terminal"),
+            ),
+            listOf(
+                TourItem(Icons.Outlined.Public, tr("联网搜索"), tr("默认就能搜；要更强的检索，在这接自己的搜索引擎。"), tr("在哪：设置 → 联网搜索"), "search_settings"),
+                TourItem(Icons.Outlined.Info, tr("世界书"), tr("给角色搭世界观设定，写故事时它用得上。"), tr("在哪：左边抽屉 → 世界书"), "worldtree"),
+                TourItem(Icons.Outlined.Settings, tr("对话设置"), tr("回复长短、上下文长度、工具怎么执行。"), tr("在哪：设置 → 对话设置"), "dialog_settings"),
+            ),
+        )
     }
-    Spacer(Modifier.height(10.dp))
-    XtomCard(modifier = Modifier.stepIn(2)) {
-        FeatureRow(Icons.Outlined.Waves, tr("超级岛"), tr("屏幕顶上的一条小胶囊，正在干什么、干到哪一步一眼能看到。"))
-        FeatureRow(Icons.Outlined.Terminal, tr("终端"), tr("装上独立的终端 App 之后，AI 能真的在你手机上跑命令。"))
-        FeatureRow(Icons.Outlined.Timeline, tr("活动中心"), tr("它每次动手都记一笔：调了什么、参数是什么、成没成。不放心的时候去这里翻。"))
+    groups.forEachIndexed { gi, items ->
+        TourCard(
+            heading = when (gi) {
+                0 -> tr("最常用的")
+                1 -> tr("想折腾再看")
+                else -> tr("进去就能用")
+            },
+            items = items,
+            onFinish = onFinish,
+            index = gi + 1,
+        )
+        Spacer(Modifier.height(10.dp))
     }
-    Spacer(Modifier.height(10.dp))
-    XtomCard(modifier = Modifier.stepIn(3)) {
-        FeatureRow(Icons.Outlined.Add, tr("左边抽屉"), tr("所有页面的入口都在那儿，还能按自己习惯重新排。"))
-        FeatureRow(Icons.Outlined.Shield, tr("权限管理"), tr("哪些工具能用、哪些要问你、哪些直接禁掉，都在这里改。"))
+}
+
+@Composable
+private fun TourCard(heading: String, items: List<TourItem>, onFinish: (String?) -> Unit, index: Int) {
+    val scheme = MaterialTheme.colorScheme
+    XtomCard(modifier = Modifier.stepIn(index)) {
+        Text(heading, color = scheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(2.dp))
+        items.forEachIndexed { i, item ->
+            if (i > 0) HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.4f))
+            TourRow(item, onFinish)
+        }
+    }
+}
+
+@Composable
+private fun TourRow(item: TourItem, onFinish: (String?) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Column(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
+        Row {
+            Icon(item.icon, null, tint = scheme.primary, modifier = Modifier.size(16.dp).padding(top = 1.dp))
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
+                Text(item.title, color = scheme.onSurface, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                Text(item.desc, color = scheme.onSurfaceVariant, fontSize = 10.sp, lineHeight = 14.sp)
+            }
+        }
+        Spacer(Modifier.height(2.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(item.where, color = scheme.onSurfaceVariant, fontSize = 10.sp, modifier = Modifier.weight(1f))
+            TextButton(
+                onClick = { onFinish(item.route) },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+            ) {
+                Text(tr("去看看"), color = scheme.primary, fontSize = 11.sp)
+            }
+        }
     }
 }
 
@@ -1627,7 +1709,7 @@ private fun TourStep(compact: Boolean) {
 // ============================================================
 
 @Composable
-private fun DoneStep(compact: Boolean) {
+private fun DoneStep(compact: Boolean, onFinish: (String?) -> Unit) {
     val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
     // 汇总只在进这一步时读一次（IO + binder），不每次重组重算
@@ -1701,6 +1783,22 @@ private fun DoneStep(compact: Boolean) {
         SummaryLine(tr("录音权限"), if (micOk) tr("已开") else tr("没开，只能打字"), ok = micOk)
     }
     Spacer(Modifier.height(12.dp))
+    XtomCard(modifier = Modifier.stepIn(2)) {
+        Text(tr("现在去试试"), color = scheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(4.dp))
+        // 一键直达：点了直接结束向导、落在对应页面（和导览页的「去看看」同一个机制）
+        androidx.compose.foundation.layout.FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            QuickGo(Icons.Outlined.Memory, tr("看记忆"), "memory", onFinish)
+            QuickGo(Icons.Outlined.Mic, tr("录唤醒词"), "wake", onFinish)
+            QuickGo(Icons.Outlined.Terminal, tr("逛终端"), "terminal", onFinish)
+            QuickGo(Icons.Outlined.Settings, tr("改设置"), "settings_hub", onFinish)
+        }
+    }
+    Spacer(Modifier.height(10.dp))
     Text(
         tr("想重新走一遍：设置 → 新手向导。"),
         color = scheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 16.sp,
@@ -1712,6 +1810,23 @@ private fun DoneStep(compact: Boolean) {
         color = scheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 16.sp,
         modifier = Modifier.stepIn(2),
     )
+}
+
+/** 完成页的一枚快捷入口小按钮。 */
+@Composable
+private fun QuickGo(icon: ImageVector, label: String, route: String, onFinish: (String?) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        onClick = { onFinish(route) },
+        shape = RoundedCornerShape(12.dp),
+        color = scheme.surfaceContainerHighest,
+    ) {
+        Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = scheme.primary, modifier = Modifier.size(15.dp))
+            Spacer(Modifier.width(5.dp))
+            Text(label, color = scheme.onSurface, fontSize = 11.sp)
+        }
+    }
 }
 
 @Composable

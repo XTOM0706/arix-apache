@@ -15,6 +15,7 @@ import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import com.arix.app.tr
 import kotlinx.coroutines.CancellationException
@@ -96,6 +97,7 @@ class BleTool(private val context: Context) : Tool {
         @Volatile var gatt: BluetoothGatt? = null
         @Volatile var connected = false
         @Volatile var lastStatus = 0
+        @Volatile var lastActiveElapsed: Long = SystemClock.elapsedRealtime()
         val connectSignal = CompletableDeferred<Boolean>()
         val discoverSignal = CompletableDeferred<Boolean>()
         @Volatile var readSignal: CompletableDeferred<Pair<Int, ByteArray?>>? = null
@@ -127,6 +129,7 @@ class BleTool(private val context: Context) : Tool {
 
     private class SppSession(val address: String, val socket: BluetoothSocket) {
         @Volatile var alive = true
+        @Volatile var lastActiveElapsed: Long = SystemClock.elapsedRealtime()
         private val buf = ByteArrayOutputStream()
         private val cap = 64 * 1024
 
@@ -159,6 +162,8 @@ class BleTool(private val context: Context) : Tool {
     private companion object {
         /** 一台手表同时挂太多连接既费电又必然掉线，卡个上限。 */
         const val MAX_SESSIONS = 4
+        /** 空闲自动断开：跨调用保留连接，但 5 分钟没有任何工具动作就回收，避免 GATT/SPP 永久在线。 */
+        const val IDLE_TIMEOUT_MS = 5L * 60_000L
         val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805f9b34fb")
         val gattSessions = ConcurrentHashMap<String, GattSession>()
@@ -167,8 +172,26 @@ class BleTool(private val context: Context) : Tool {
 
     // ============================================================
 
+    /** 执行任何蓝牙动作前先回收空闲连接。 */
+    private fun closeIdleSessions() {
+        val now = SystemClock.elapsedRealtime()
+        gattSessions.entries.toList().forEach { (addr, s) ->
+            if (now - s.lastActiveElapsed > IDLE_TIMEOUT_MS) {
+                s.close()
+                gattSessions.remove(addr)
+            }
+        }
+        sppSessions.entries.toList().forEach { (addr, s) ->
+            if (now - s.lastActiveElapsed > IDLE_TIMEOUT_MS) {
+                s.close()
+                sppSessions.remove(addr)
+            }
+        }
+    }
+
     override suspend fun execute(params: JSONObject): ToolResult {
         val action = params.optString("action", "scan").trim().lowercase().ifBlank { "scan" }
+        closeIdleSessions()
 
         val manager = context.applicationContext.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
         val adapter: BluetoothAdapter = manager?.adapter
@@ -487,6 +510,7 @@ class BleTool(private val context: Context) : Tool {
 
     private suspend fun sppSend(addr: String, params: JSONObject): ToolResult {
         val s = sppSessions[addr]?.takeIf { it.alive } ?: return ToolResult("$addr 的串口没连着，先 spp_connect。", isError = true)
+        s.lastActiveElapsed = SystemClock.elapsedRealtime()
         val bytes = decode(params) ?: return ToolResult("value 空的或不是合法的 hex。", isError = true)
         gateWrite("通过蓝牙串口向 $addr 发送 ${bytes.size} 字节：${format(bytes, params).take(80)}")
             ?.let { return ToolResult(it, isError = true) }
@@ -498,6 +522,7 @@ class BleTool(private val context: Context) : Tool {
 
     private suspend fun sppRead(addr: String, params: JSONObject): ToolResult {
         val s = sppSessions[addr] ?: return ToolResult("$addr 的串口没连着，先 spp_connect。", isError = true)
+        s.lastActiveElapsed = SystemClock.elapsedRealtime()
         val waitMs = params.optInt("timeout_ms", 2000).coerceIn(0, 30000).toLong()
         val until = System.currentTimeMillis() + waitMs
         var data = s.drain()
@@ -511,7 +536,8 @@ class BleTool(private val context: Context) : Tool {
 
     // ---- 公共零件 ----
 
-    private fun session(addr: String): GattSession? = gattSessions[addr]?.takeIf { it.connected }
+    private fun session(addr: String): GattSession? =
+        gattSessions[addr]?.takeIf { it.connected }?.also { it.lastActiveElapsed = SystemClock.elapsedRealtime() }
 
     private fun notConnected(addr: String) =
         ToolResult(if (addr.isBlank()) "要哪台设备？给 address（先 scan 或 paired 拿 MAC）" else "$addr 没有连着，先 action=connect。", isError = true)

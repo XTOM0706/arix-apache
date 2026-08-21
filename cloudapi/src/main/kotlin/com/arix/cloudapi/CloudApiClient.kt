@@ -99,6 +99,15 @@ class CloudApiClient(private val config: CloudApiConfig) {
             val msgObj = JSONObject()
             msgObj.put("role", msg.role)
 
+            // ⚠ 残缺 tool 消息直接跳过：role=="tool" 但 toolCallId 为 null 的历史脏数据（老版本落库时
+            // 没写 toolCallId），拼进请求体会发成 `{"role":"tool","content":...}` 而缺 tool_call_id，
+            // DeepSeek 等严格端点直接 400（"Duplicate value for 'tool_call_id' of null"）。
+            // 正常路径每条 tool 结果都有配对 id（ChatScreen 用 tc.id 生成），null/空串 的只会是脏数据，
+            // 模型拿它没意义（没有可配对的 assistant.tool_calls），跳过不损失。
+            // ⚠ 必须是 isNullOrBlank：老数据的 toolCallId 反序列化成空串 ""（不是 null），
+            // 只判 null 会漏放 → 发给服务商 `tool_call_id:""` → 照样 400。
+            if (msg.role == "tool" && msg.toolCallId.isNullOrBlank()) return@forEach
+
             val effectiveImages = if (msg.role == "user") {
                 (msg.images ?: emptyList()) + if (msg == allMessages.lastOrNull { it.role == "user" }) (images ?: emptyList()) else emptyList()
             } else emptyList()
@@ -126,7 +135,7 @@ class CloudApiClient(private val config: CloudApiConfig) {
                     })
                 }
                 msgObj.put("content", contentArray)
-            } else if (msg.toolCallId != null) {
+            } else if (!msg.toolCallId.isNullOrBlank()) {
                 msgObj.put("content", msg.content)
                 msgObj.put("tool_call_id", msg.toolCallId)
             } else if (!msg.toolCalls.isNullOrEmpty()) {
@@ -136,6 +145,10 @@ class CloudApiClient(private val config: CloudApiConfig) {
                 else msgObj.put("content", JSONObject.NULL)
                 val tcArray = JSONArray()
                 msg.toolCalls.forEach { tc ->
+                    // ⚠ 残缺的 tool_call 直接跳过：name 为空的历史脏数据（老版本落库时 name 字段
+                    // 缺失/为空）重发出去，模型会照着它复刻一个 name="" 的调用 → 执行时
+                    // ToolManager 查不到 → 「工具未找到」。正常调用 name 必非空，跳过不损失。
+                    if (tc.name.isBlank()) return@forEach
                     tcArray.put(JSONObject().apply {
                         put("id", tc.id)
                         put("type", "function")
@@ -151,7 +164,9 @@ class CloudApiClient(private val config: CloudApiConfig) {
                         }
                     })
                 }
-                msgObj.put("tool_calls", tcArray)
+                // ⚠ 全被跳过（历史 tool_calls 全是空 name）时别发空 tool_calls 数组——服务商不认空数组。
+                // 这条 assistant 消息退化成普通消息（content 已有），tool_calls 键省略即可。
+                if (tcArray.length() > 0) msgObj.put("tool_calls", tcArray)
             } else {
                 msgObj.put("content", msg.content)
             }
@@ -159,6 +174,15 @@ class CloudApiClient(private val config: CloudApiConfig) {
             // 四种消息形态（多模态/工具结果/带工具调用/纯文本）都覆盖得到；只补目标里还没有的键，
             // 不会覆盖上面刚拼好的 content/tool_calls。脏数据只跳过这一项，不炸整个请求。
             msg.extra?.let { ex -> ReasoningPassthrough.writeBack(msgObj, ex, config.baseUrl) }
+            // ⚠ DeepSeek（含 opencode.ai 托管的 deepseek-v4-flash-free）要求 thinking mode 下把
+            // `reasoning_content` **原样回传**给 API，缺了直接 400
+            // （"The reasoning_content in the thinking mode must be passed back to the API"）。
+            // 老数据/透传槽缺失时，assistant 消息带 reasoning 思考文本 → 在这里兜底补上该字段，
+            // 保证回传（哪怕 reasoning 本身来自旧版本没存 extra 的消息）。
+            if (msg.role == "assistant" && msg.reasoning.isNullOrBlank() == false &&
+                msgObj.has("reasoning_content") == false) {
+                msgObj.put("reasoning_content", msg.reasoning)
+            }
             messagesJson.put(msgObj)
         }
 
@@ -370,15 +394,20 @@ class CloudApiClient(private val config: CloudApiConfig) {
                                         val existing = toolCallMap[idx]
                                         if (existing != null) {
                                             toolCallMap[idx] = existing.copy(
-                                                id = chunk.id.ifBlank { existing.id },
-                                                name = chunk.name.ifBlank { existing.name },
+                                                // ⚠ org.json 把 JSON null 解析成字符串 "null"，而 DeepSeek 流式
+                                                // tool_calls 的**后续片**里 id/name 经常是 null（只带 arguments 增量）。
+                                                // 若用 ifBlank，非空的 "null" 会把第一片的正确 id/name 覆盖掉 →
+                                                // 最终 name="null" → ToolManager 查不到 → 「工具未找到:null」。
+                                                // 这里把空串、纯 "null" 字符串都视为无效，保留已有值。
+                                                id = if (chunk.id.isNullOrBlank() || chunk.id == "null") existing.id else chunk.id,
+                                                name = if (chunk.name.isNullOrBlank() || chunk.name == "null") existing.name else chunk.name,
                                                 arguments = existing.arguments + chunk.arguments,
                                                 extra = chunk.extra ?: existing.extra   // 后到的非空才覆盖，别把已收到的签名抹掉
                                             )
                                         } else {
                                             toolCallMap[idx] = chunk
                                         }
-                                        toolCallMap[idx]?.takeIf { it.name.isNotBlank() }?.let { onToolArgsChunk?.invoke(it.name, it.arguments) }
+                                        toolCallMap[idx]?.takeIf { it.name.isNotBlank() && it.name != "null" }?.let { onToolArgsChunk?.invoke(it.name, it.arguments) }
                                     }
                                     usage = mergeUsage(usage, u)
                                 }
@@ -404,8 +433,10 @@ class CloudApiClient(private val config: CloudApiConfig) {
                             val existing = toolCallMap[idx]
                             if (existing != null) {
                                 toolCallMap[idx] = existing.copy(
-                                    id = chunk.id.ifBlank { existing.id },
-                                    name = chunk.name.ifBlank { existing.name },
+                                    // ⚠ 同主循环：org.json 把 JSON null 解析成字符串 "null"，DeepSeek 流式后续片
+                                    // 的 id/name 常为 null，ifBlank 挡不住非空的 "null" → 覆盖正确值 → 工具未找到:null。
+                                    id = if (chunk.id.isNullOrBlank() || chunk.id == "null") existing.id else chunk.id,
+                                    name = if (chunk.name.isNullOrBlank() || chunk.name == "null") existing.name else chunk.name,
                                     arguments = existing.arguments + chunk.arguments,
                                     extra = chunk.extra ?: existing.extra   // 后到的非空才覆盖，别把已收到的签名抹掉
                                 )
@@ -427,7 +458,7 @@ class CloudApiClient(private val config: CloudApiConfig) {
                 fullContent = fullContent.toString(),
                 error = null, httpCode = response.code, errorBody = null, usage = usage,
                 // 滤掉只带签名没带 function 的空壳条目（见 parseDelta），别让它变成幽灵工具调用
-                toolCalls = toolCallMap.values.filter { it.name.isNotBlank() }, finishReason = finishReason,
+                toolCalls = toolCallMap.values.filter { it.name.isNotBlank() && it.name != "null" }, finishReason = finishReason,
                 // 本轮消息级私有透传字段归档成原始 JSON 串；一个都没收到就是 null（不存不写）。
                 extra = ReasoningPassthrough.finish(extraAcc, config.baseUrl)
             ).also { ApiMonitor.record(config.baseUrl, config.model, usage?.promptTokens ?: 0, usage?.completionTokens ?: 0, usage?.totalTokens ?: 0, System.currentTimeMillis() - startTime, success = true, null) }

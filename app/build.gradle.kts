@@ -64,6 +64,10 @@ android {
         // 只打包 arm64-v8a 原生库：去掉 x86/x86_64/armeabi-v7a 三份 .so（约 -44MB）。
         // 不丢任何 App 功能；仅不支持 x86 模拟器与极老的 32 位设备。要支持模拟器就删掉这行。
         ndk { abiFilters += "arm64-v8a" }
+        // 系统资源只留中/英文：界面文案走运行时 i18n 表（33 语自研查表），系统资源（Material3/WebView
+        // 等库的默认 strings）只随系统语言渲染。多打包语言只会白白撑大 resources.arsc 的语言字符串表。
+        // "zh" 前缀会匹配 zh-rCN/zh-rTW 等全部中文变体。
+        resourceConfigurations += setOf("zh", "en")
     }
 
     buildTypes {
@@ -93,6 +97,17 @@ android {
             // （RSA/AES），后量子算法一行都不会走到——纯白带。R8 只剪代码不剪资源，所以得在这儿排。
             // ⚠ 排的是 `org/bouncycastle/pqc/**` 下的**资源**，不是 BC 本身；PDF 解析/解密不受影响。
             excludes += "org/bouncycastle/pqc/**"
+            // META-INF 的 `.version` 元数据（Maven 构建信息，运行时无人读）——AGP 默认排除列表没覆盖，
+            // 40+ 个文件约 150KB 纯白带。LICENSE/NOTICE 是法律文本，保留不排。
+            excludes += "META-INF/*.version"
+            excludes += "META-INF/**/*.version"
+            // OkHttp 公共后缀表（HttpUrl.topPrivateDomain 的辅助数据）：全项目从不调用该 API，41KB 白带。
+            // 将来若用到再恢复。
+            excludes += "okhttp3/internal/publicsuffix/**"
+            // ⚠ 实测：packaging.resources.excludes **对依赖库 AAR 的 assets 不生效**（assets 走独立合并管线，
+            //   只处理类路径资源如 org/bouncycastle/pqc/**）。pdfbox 的 LiberationSans-Regular.ttf(410KB)
+            //   在 aar 的 assets/ 里，试过带/不带 assets/ 前缀两种模式都排不掉。要排得改 mergeAssets 任务
+            //   或换 pdfbox 构建，410KB 不值当，放弃。它只在渲染 PDF 时被按需加载，DocReadTool 不渲染。
         }
         jniLibs {
             // 2026-07-28：`libsherpa-onnx-c-api.so`(4.20MB) 与 `libsherpa-onnx-cxx-api.so`(0.42MB) 已删。
@@ -139,9 +154,9 @@ dependencies {
     // Baseline Profile 运行时安装器：把打进 APK 的基线配置(src/main/baseline-prof.txt)在启动时装进 ART，
     // 让热点路径(启动/首帧/滚动)提前 AOT 编译 → 少 JIT 抖动。仅对 release 生效(debug 不走)。targetSdk=28 必须带它。
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
+    implementation(libs.androidx.appcompat)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.webkit) // 隐身浏览器：文档加载前注入反检测脚本(addDocumentStartJavaScript)
-    implementation(libs.androidx.appcompat)
     implementation(libs.activity.compose)
     implementation(libs.zxing.core) // QR 配置导入导出（编解码，纯 Java）
     implementation(platform(libs.compose.bom))

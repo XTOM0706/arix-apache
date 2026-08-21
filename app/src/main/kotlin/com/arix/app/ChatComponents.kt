@@ -88,10 +88,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -371,6 +373,9 @@ private fun fmtFileSize(b: Long): String = when {
     variantCount: Int = 1,      // 该位置的分支总数；<=1 不显示切换箭头
     modelForCost: String? = null,   // 当前模型名，用于估算花费($)
     onAction: (ChatBubble, BubbleAction) -> Unit = { _, _ -> },
+    // 这条气泡刚结束流式（思考在流式里是强制展开的，见 ChatScreen 的 justStreamedId）：
+    // 让思考抽屉先以展开态组合一帧，再动画收起到默认态，把「思考结束抽屉瞬间合上」的硬切变平滑。
+    reasoningStartOpen: Boolean = false,
 ) {
     val isUser = bubble.role == "user"
     val scheme = MaterialTheme.colorScheme
@@ -438,11 +443,11 @@ private fun fmtFileSize(b: Long): String = when {
             val hasReasoning = !bubble.reasoning.isNullOrBlank()
             if (metaStyle == com.arix.app.theme.MetaBlockStyle.TIMELINE) {
                 if (hasReasoning || toolCalls != null) ChainTimelineCard {
-                    if (hasReasoning) ReasoningStep(bubble.reasoning!!, active = showCursor)
+                    if (hasReasoning) ReasoningStep(bubble.reasoning!!, active = showCursor, startOpen = reasoningStartOpen)
                     toolCalls?.forEach { c -> ToolCallStep(c) }
                 }
             } else if (hasReasoning) {
-                ReasoningBlock(bubble.reasoning!!, active = showCursor)
+                ReasoningBlock(bubble.reasoning!!, active = showCursor, startOpen = reasoningStartOpen)
             }
             val isToolMeta = bubble.toolCalls != null && bubble.text.isBlank()
             if (!isToolMeta) XtomStyledBubbleSurface(
@@ -706,10 +711,21 @@ private fun DisclosureRow(
 // 初始展开态跟「思考块默认折叠」开关走；remember 挂它作 key，这样在外观设置页里一拨开关预览立刻跟着变
 // （不挂 key 的话初值只在首次组合时取一次，预览拨了没反应，又是一次「货不对板」）。
 @Composable
-fun ReasoningBlock(text: String, active: Boolean) {
+fun ReasoningBlock(text: String, active: Boolean, startOpen: Boolean = false) {
     val scheme = MaterialTheme.colorScheme
     val defaultOpen = !LocalChatDisplay.current.reasoningCollapsed
-    var expanded by remember(defaultOpen) { mutableStateOf(defaultOpen) }
+    // 刚结束流式的新气泡（startOpen=true）：流式里思考是强制展开的，而新气泡是全新组合、
+    // remember 归零——若默认折叠，新气泡一出现就是收起态 = 展开→收起硬切。这里让它先以
+    // 展开态组合一帧，下一帧再动画收起到默认态（AnimatedVisibility 的 exit 动画就会播放）。
+    var expanded by remember(defaultOpen) { mutableStateOf(defaultOpen || startOpen) }
+    LaunchedEffect(startOpen, defaultOpen) {
+        if (startOpen && !defaultOpen) {
+            // 等一帧让「展开态」先落地，再翻成收起：直接翻的话 AnimatedVisibility 可能拿不到
+            // 起点（同一帧里从初始隐藏直接到隐藏，exit 动画不会播）。
+            withFrameNanos { }
+            expanded = defaultOpen
+        }
+    }
     val open = active || expanded // 思考进行中始终展开；完成后由用户控制
     MetaBlockCard(modifier = Modifier.padding(bottom = 2.dp)) {
         DisclosureRow(onClick = { expanded = !expanded }, enabled = !active, expanded = open) {
@@ -1042,10 +1058,17 @@ private fun ChainStep(
 
 /** 思考步骤（时间线版 ReasoningBlock）。 */
 @Composable
-private fun ReasoningStep(text: String, active: Boolean) {
+private fun ReasoningStep(text: String, active: Boolean, startOpen: Boolean = false) {
     val scheme = MaterialTheme.colorScheme
     val defaultOpen = !LocalChatDisplay.current.reasoningCollapsed   // 与 ReasoningBlock 同一个开关，两种呈现风格不能有两套脾气
-    var expanded by remember(defaultOpen) { mutableStateOf(defaultOpen) }
+    // 同 ReasoningBlock：刚结束流式的新气泡先以展开态组合一帧，再动画收起（见 startOpen 注释）。
+    var expanded by remember(defaultOpen) { mutableStateOf(defaultOpen || startOpen) }
+    LaunchedEffect(startOpen, defaultOpen) {
+        if (startOpen && !defaultOpen) {
+            withFrameNanos { }
+            expanded = defaultOpen
+        }
+    }
     val open = active || expanded   // 进行中始终展开，且标题不可点（与 ReasoningBlock 一致）
     ChainStep(
         icon = Icons.Outlined.Psychology, iconTint = scheme.secondary,

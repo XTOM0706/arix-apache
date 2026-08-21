@@ -68,4 +68,12 @@ object ConfigModePrefs {
     private const val KEY_SUGGESTION_INLINE = "suggestion_inline"
     fun suggestionInline(context: Context): Boolean = prefs(context).getBoolean(KEY_SUGGESTION_INLINE, true)
     fun setSuggestionInline(context: Context, v: Boolean) = prefs(context).edit().putBoolean(KEY_SUGGESTION_INLINE, v).apply()
+
+    // 工具死循环硬停（默认开，可关）。长工作流里反复调同一个工具/同一组工具是正常干活，
+    // 但「完全相同的调用（同名同参）连续 5 次」或「同一组 4 连序列在最近 8 步出现 ≥3 次」
+    // 是真打转（同参数重来结果不会变）。开着时中断本轮并让模型基于已有结果作答；
+    // 关掉则完全不干预——交给用户 STOP 或模型自己判断。
+    private const val KEY_STUCK_GUARD = "tool_stuck_guard"
+    fun toolStuckGuard(context: Context): Boolean = prefs(context).getBoolean(KEY_STUCK_GUARD, true)
+    fun setToolStuckGuard(context: Context, v: Boolean) = prefs(context).edit().putBoolean(KEY_STUCK_GUARD, v).apply()
 }

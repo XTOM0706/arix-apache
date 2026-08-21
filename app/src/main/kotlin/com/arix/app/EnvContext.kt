@@ -16,6 +16,10 @@ object EnvContext {
     private val last = java.util.concurrent.ConcurrentHashMap<Long, Snap>()
     private val lastAt = java.util.concurrent.ConcurrentHashMap<Long, Long>()
 
+    /** 健康/天气 concern 检查间隔：聊天连发时不要每条消息都查询 ContentProvider/SQLite。 */
+    private const val CONCERN_INTERVAL_MS = 60_000L
+    private val lastConcernAt = java.util.concurrent.ConcurrentHashMap<Long, Long>()
+
     /** 返回本轮该注入的环境串；没什么可说时返回空串。 */
     fun build(context: Context, convId: Long?): String {
         val id = convId ?: -1L
@@ -36,9 +40,12 @@ object EnvContext {
         // 电量：只在「低电且没在充电」时报一次。充着电=有人管着，不打扰；充电状态变化也不播报。
         val lowUnplugged = level in 0..20 && !charging
         if (lowUnplugged && (prev == null || !prev.lowUnplugged)) parts.add("电量只剩 $level%、没在充电")
-        // 健康 / 天气：只报关心点
-        try { HealthSignals.concern(context)?.let { parts.add(it) } } catch (_: Exception) {}
-        try { WeatherSignals.concern(context)?.let { parts.add(it) } } catch (_: Exception) {}
+        // 健康 / 天气：只报关心点，且每个会话每分钟最多检查一次（这些查询背后可能跨进程/读盘）。
+        if (now - (lastConcernAt[id] ?: 0L) >= CONCERN_INTERVAL_MS) {
+            lastConcernAt[id] = now
+            try { HealthSignals.concern(context)?.let { parts.add(it) } } catch (_: Exception) {}
+            try { WeatherSignals.concern(context)?.let { parts.add(it) } } catch (_: Exception) {}
+        }
 
         last[id] = Snap(day, lowUnplugged)
         lastAt[id] = now

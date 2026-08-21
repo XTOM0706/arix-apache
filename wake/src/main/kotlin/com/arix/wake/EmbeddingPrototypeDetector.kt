@@ -34,28 +34,36 @@ internal class EmbeddingPrototypeDetector(
 
     private val enrollment = WakeEnrollment(context)
     private val featureDim = MfccFrontend.featureDim
-    private val segment = ArrayList<Short>(16000)
+
+    // 原生 short 缓冲，避免 ArrayList<Short> 每样本装箱（语音段可达 25k+ 对象，A55 上 GC 可见）。
+    private var segment = ShortArray(16000)
+    private var segmentLen = 0
 
     // 所有启用中的模板原型（名字只为日志好读）。多条 = 同一唤醒词的不同环境/语气各录一条，或干脆多个唤醒词。
     private var prototypes: List<Pair<String, Array<FloatArray>>>? = null
     private var loadedVersion = -1
 
     override fun reset() {
-        segment.clear()
+        segmentLen = 0
     }
 
     override fun accept(pcm: ShortArray, length: Int): WakeDetection? {
         val n = minOf(length, pcm.size)
-        for (i in 0 until n) segment.add(pcm[i])
+        if (n <= 0) return null
+        if (segmentLen + n > segment.size) {
+            segment = segment.copyOf(maxOf(segment.size * 2, segmentLen + n))
+        }
+        System.arraycopy(pcm, 0, segment, segmentLen, n)
+        segmentLen += n
         return null // 段式：不在流式阶段出分
     }
 
     override fun onSegmentEnd(): WakeDetection? {
         val protos = ensurePrototypes()
         if (protos.isEmpty()) { WakeLog.d("判决: 没有启用中的唤醒词模板，无法比对"); return null }
-        if (segment.isEmpty()) return null
+        if (segmentLen <= 0) return null
 
-        val pcm = ShortArray(segment.size) { segment[it] }
+        val pcm = if (segmentLen == segment.size) segment else segment.copyOf(segmentLen)
         val feat = MfccFrontend.extract(pcm, pcm.size)
         if (feat.isEmpty() || feat.size % featureDim != 0) { WakeLog.d("判决: 特征无效"); return null }
 
@@ -85,7 +93,7 @@ internal class EmbeddingPrototypeDetector(
     }
 
     override fun close() {
-        segment.clear()
+        segmentLen = 0
     }
 
     /** 版本号变了（用户增删/改名/启停了模板）就重新加载——设置页改完当场生效，不用重启唤醒服务。 */

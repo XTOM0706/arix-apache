@@ -110,9 +110,13 @@ class ConversationManager(private val context: Context) {
         // ⚠ 它只改 content，不删消息、不动 toolCallId——少一条配对的 tool 结果，下一轮请求直接 400
         //   （同样的坑见 ContextCompressor.sanitizePairing 的注释）。
         val persisted = com.arix.tool.SensitiveResultPolicy.redactForPersistence(messages)
+        // ⚠ tool 消息必须有配对的 toolCallId 才落库：缺 id 的 tool 消息（历史脏数据）下次加载重发
+        // 会被严格端点 400（"Duplicate value for 'tool_call_id' of null"）。它没有可配对的
+        // assistant.tool_calls，丢了不影响对话完整性。空串也算缺（老数据反序列化成 ""）。
         val filtered = persisted.filter { msg ->
+            if (msg.role == "tool" && msg.toolCallId.isNullOrBlank()) return@filter false
             msg.content.isNotBlank() || !msg.reasoning.isNullOrBlank() ||
-            !msg.toolCalls.isNullOrEmpty() || msg.toolCallId != null ||
+            !msg.toolCalls.isNullOrEmpty() || !msg.toolCallId.isNullOrBlank() ||
             !msg.attachments.isNullOrEmpty()
         }
         val json = JSONArray().apply {
@@ -225,8 +229,7 @@ class ConversationManager(private val context: Context) {
                             )
                         }
                     } else null,
-                    toolCallId = if (obj.has("toolCallId") && !obj.isNull("toolCallId")) obj.getString("toolCallId") else null,
-                    attachments = obj.optJSONArray("attachments")?.let { a -> (0 until a.length()).map { a.getString(it) } }
+                    toolCallId = if (obj.has("toolCallId") && !obj.isNull("toolCallId")) obj.getString("toolCallId").takeIf { it.isNotBlank() } else null,                    attachments = obj.optJSONArray("attachments")?.let { a -> (0 until a.length()).map { a.getString(it) } }
                 )
             }
         } catch (e: Exception) {

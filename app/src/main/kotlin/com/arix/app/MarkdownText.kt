@@ -705,7 +705,8 @@ fun MarkdownText(text: String, color: Color, fontSize: TextUnit = 13.sp, streami
                     Spacer(Modifier.width(3.dp))
                     Text(rememberInline(b.text, muted, linkColor, codeColor), color = muted, fontSize = fontSize)
                 }
-                is MdBlock.Bullet -> Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                // 列表项顶部对齐：序号/复选框贴首行，而不是垂直居中（多行项居中会“序号错位”）
+                is MdBlock.Bullet -> Row(verticalAlignment = androidx.compose.ui.Alignment.Top) {
                     // 任务列表用复选框方块+勾；普通列表用圆点/序号
                     if (b.checked != null) {
                         Text(if (b.checked) "☑" else "☐", color = if (b.checked) linkColor else muted, fontSize = fontSize)

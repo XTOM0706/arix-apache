@@ -80,9 +80,31 @@ class VoiceTurn(
         private const val TAG = "VoiceTurn"
         /** VAD 判定为人声的概率阈值。与 wake 模块其余部分保持一致。 */
         private const val SPEECH_PROB = 0.5f
+
+        // L0 能量门：与 WakeAudioPipeline 同一套思路——纯静音帧只更新噪声底，不跑 ONNX VAD。
+        private const val MIN_RMS = 0.003f
+        private const val NOISE_MARGIN = 0.001f
+        private const val NOISE_ALPHA = 0.05f
     }
 
     private val appContext = context.applicationContext
+
+    /** VAD 会话复用：recordUtterance / awaitSpeech 每轮都新建 OrtSession 的开销在手表上不可忽略。 */
+    private var vad: SileroVad? = null
+
+    private fun vadInstance(): SileroVad = vad ?: SileroVad(appContext, sampleRate, frameSize).also { vad = it }
+
+    /** 释放复用的 VAD 会话。VoiceTurn 生命周期结束时由调用方调用（见 VoiceCall 的 DisposableEffect）。 */
+    fun release() {
+        vad?.close()
+        vad = null
+    }
+
+    private fun energyGateOpen(r: Float, noiseEma: Float): Boolean =
+        r >= maxOf(MIN_RMS, noiseEma + NOISE_MARGIN)
+
+    private fun updateNoise(noiseEma: Float, r: Float): Float =
+        if (noiseEma <= 0f) r else (1f - NOISE_ALPHA) * noiseEma + NOISE_ALPHA * r
 
     /** 设备是否真的支持回声消除。不支持时 barge-in 会误触发，调用方需据此降级。 */
     val echoCancelSupported: Boolean get() = runCatching { AcousticEchoCanceler.isAvailable() }.getOrDefault(false)
@@ -131,7 +153,7 @@ class VoiceTurn(
             if (aec == null) Log.w(TAG, "本机没有回声消除；barge-in 可能被 AI 自己的声音误触发")
         }
 
-        val vad = SileroVad(appContext, sampleRate, frameSize)
+        val vad = vadInstance().also { it.reset() }
         val buffer = ShortArray(frameSize)
         val speech = ShortBuf(sampleRate * 4)   // 别用 ArrayList<Short>：每个采样点都装箱
         val frameMs = (frameSize * 1000L) / sampleRate
@@ -140,6 +162,7 @@ class VoiceTurn(
         var silenceMs = 0L
         var speechMs = 0L
         var quietMs = 0L
+        var noiseEma = 0f
         var end = TurnEnd.MAX_LENGTH
         val startedAt = System.currentTimeMillis()
 
@@ -153,7 +176,21 @@ class VoiceTurn(
                 if (read < 0) { end = TurnEnd.MIC_UNAVAILABLE; break }
                 if (read < frameSize) continue
 
-                onAmplitude?.invoke(rms(buffer, read))
+                val frameRms = rms(buffer, read)
+                onAmplitude?.invoke(frameRms)
+
+                // L0 能量门：没开口前的纯静音/低噪帧不跑 VAD。已检测到 speech 后必须继续跑 VAD，
+                // 否则无法判断尾静音、会把句尾整段漏掉。
+                if (!seenSpeech) {
+                    val gateOpen = energyGateOpen(frameRms, noiseEma)
+                    noiseEma = updateNoise(noiseEma, frameRms)
+                    if (!gateOpen) {
+                        quietMs += frameMs
+                        if (leadingSilenceMs > 0 && quietMs >= leadingSilenceMs) { end = TurnEnd.NO_SPEECH; break }
+                        continue
+                    }
+                }
+
                 val isSpeech = vad.probability(buffer, frameSize) >= SPEECH_PROB
                 if (isSpeech) {
                     seenSpeech = true
@@ -181,7 +218,7 @@ class VoiceTurn(
             runCatching { recorder.release() }
             runCatching { aec?.release() }
             runCatching { ns?.release() }
-            runCatching { vad.close() }
+            // vad 实例复用，不在这里 close；由 release() 统一释放。
         }
 
         // 麦克风中途没了要如实上报：不能被下面的 !seenSpeech 覆盖成 NO_SPEECH——
@@ -233,10 +270,11 @@ class VoiceTurn(
 
         val aec = if (echoCancel) runCatching { AcousticEchoCanceler.create(recorder.audioSessionId)?.apply { enabled = true } }.getOrNull() else null
         val ns = if (echoCancel) runCatching { NoiseSuppressor.create(recorder.audioSessionId)?.apply { enabled = true } }.getOrNull() else null
-        val vad = SileroVad(appContext, sampleRate, frameSize)
+        val vad = vadInstance().also { it.reset() }
         val buffer = ShortArray(frameSize)
         val frameMs = (frameSize * 1000L) / sampleRate
         var speechMs = 0L
+        var noiseEma = 0f
         var hit = false
         val startedAt = System.currentTimeMillis()
 
@@ -247,6 +285,10 @@ class VoiceTurn(
                 val read = recorder.read(buffer, 0, buffer.size)
                 if (read < 0) break   // 同上：麦克风没了，别空转
                 if (read < frameSize) continue
+                val frameRms = rms(buffer, read)
+                val gateOpen = energyGateOpen(frameRms, noiseEma)
+                noiseEma = updateNoise(noiseEma, frameRms)
+                if (!gateOpen) { speechMs = 0L; continue }
                 if (vad.probability(buffer, frameSize) >= SPEECH_PROB) {
                     speechMs += frameMs
                     if (speechMs >= minSpeechMs) { hit = true; break }
@@ -262,7 +304,7 @@ class VoiceTurn(
             runCatching { recorder.release() }
             runCatching { aec?.release() }
             runCatching { ns?.release() }
-            runCatching { vad.close() }
+            // vad 实例复用，不在这里 close；由 release() 统一释放。
         }
         hit
     }

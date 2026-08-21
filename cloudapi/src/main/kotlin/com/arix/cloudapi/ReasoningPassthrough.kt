@@ -58,18 +58,22 @@ object ReasoningPassthrough {
      *    thinking / redacted_thinking 块（自带 signature / data）的字段名，同样要求回传。
      *  · `extra_content`     —— Gemini 兼容层的私有扩展槽在消息级的对应物（tool_call 级那份
      *    已经在 CloudApiClient 里单独处理）。收到才写，没收到就不写。
-     *
-     * **故意不收 `reasoning_content`**：国内几家（DeepSeek/Kimi/GLM/Qwen）用它输出思考正文，
-     * 但它不是要回传的凭证——DeepSeek 明确规定把 reasoning_content 放进输入会直接 400。
-     * 它已经作为「给人看的文本」进了 ChatMessage.reasoning，不该再混进回传体。
+     *  · `reasoning_content` —— DeepSeek（含 opencode.ai 托管的 deepseek-v4-flash-free）的思考
+     *    正文。⚠ 2026-08 实测：**新版 DeepSeek 要求把它回传**，不回传直接 400
+     *    （"The reasoning_content in the thinking mode must be passed back to the API"）。
+     *    早期 DeepSeek 曾规定「放进输入会 400」，那是旧版本行为；现在以实测为准回传。
+     *    它同时作为「给人看的文本」进 ChatMessage.reasoning，与透传槽各存各的，互不冲突。
+     *    ⚠ 回传只对**同一家端点**生效（writeBack 按 META_ENDPOINT 校验主机名），
+     *    换到别的供应商不会把 DeepSeek 的字段发过去。
      */
-    private val PASSTHROUGH_KEYS = setOf("reasoning_details", "thinking_blocks", "extra_content")
+    private val PASSTHROUGH_KEYS = setOf("reasoning_details", "thinking_blocks", "extra_content", "reasoning_content")
 
     /**
      * 会被 SSE 切碎、需要拼接的文本类字段名。除此之外的字符串（id/signature/data/format/type…）
      * 都当作「一次到达的完整标量」，后到的非空值覆盖——拼接它们会直接毁掉签名。
+     * `reasoning_content` 是 DeepSeek 的思考正文，流式会切成多片，必须拼接成完整才回传。
      */
-    private val TEXT_KEYS = setOf("text", "summary", "thinking", "reasoning", "content")
+    private val TEXT_KEYS = setOf("text", "summary", "thinking", "reasoning", "content", "reasoning_content")
 
     /** 从一个 delta 里挑出白名单字段的**原始值**。绝大多数分片一个都没有，早退不产生任何分配。 */
     fun capture(delta: JSONObject): Map<String, Any> {

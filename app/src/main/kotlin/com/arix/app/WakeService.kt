@@ -111,12 +111,12 @@ class WakeService : Service() {
 
         // ── 省电策略 ────────────────────────────────────────────────────────
         /**
-         * 唤醒的省电档。**默认 [POWER_ALWAYS_ON]，与从前的行为逐字一致**——这不是"改默认"，
-         * 是把原来写死在代码里的那一档变成用户能选的。
+         * 唤醒的省电档。**默认 [POWER_ALWAYS_ON]**：一直常听，与从前的行为逐字一致。
          *
-         * 为什么默认仍是常开：`WakeConfig` 里写明，MIUI 这类 OEM 上非系统 App 只有「前台开一次麦、
-         * 之后不再重启」才能可靠地后台持麦。窗口模式要反复重开麦，在那些机器上会直接失效——
-         * 而"叫不醒"比"费电"严重得多。这条前提**至今没在真机上复核过**，复核成立与否再谈动默认值。
+         * 为什么默认仍是常开：MIUI 这类 OEM 上非系统 App 只有「前台开一次麦、之后不再重启」
+         * 才能可靠地后台持麦。窗口模式要反复重开麦，在那些机器上会直接失效——而"叫不醒"
+         * 比"费电"严重得多（2026-08-21 回归实证：默认档一度改成 WINDOWED，Redmi K70 Pro 上
+         * 直接无法语音唤醒，亮屏时开启连窗口都不会开）。要省电的用户可在唤醒页显式切窗口档。
          *
          * 三档的实际含义见 [powerPolicyFor]。
          */
@@ -230,7 +230,7 @@ class WakeService : Service() {
         registerGateReceiver()
         // 持续常听（ALWAYS_ON）：开启即在前台开麦、之后不再按窗口重启——非系统 App 在 MIUI 上持后台麦的
         // 唯一可行方式（对齐 Operit）。麦克风只在此刻（前台，用户点开关）启动一次。start() 内部即进入常听。
-        // 测试模式沿用超长窗口。**默认档仍是 ALWAYS_ON**，只是现在这一档由用户选（见 powerPolicyFor）。
+        // 测试模式沿用超长窗口。**默认档是 ALWAYS_ON**（见 powerPolicyFor 与上方 companion 注释）。
         val policy = powerPolicyFor(this)
         val config = if (testMode) WakeConfig(windowMs = 600_000L)
                      else WakeConfig(powerPolicy = policy)
@@ -240,6 +240,12 @@ class WakeService : Service() {
         if (testMode) {
             com.arix.wake.WakeLog.d("测试模式：持续监听 (10 分钟窗口)")
             e.submitTrigger(WakeTrigger.Explicit("test")) // 立即开麦，不等亮屏门控
+        } else if (isScreenInteractive()) {
+            // 窗口档下必须由门控开窗；但用户此刻屏幕亮着开启唤醒，SCREEN_ON 广播不会再来——
+            // 不补这一下，WINDOWED 档会一直等门控、永不开麦（2026-08-21 回归实证）。
+            // ALWAYS_ON 档下此触发是幂等的（start 时已常听），无副作用。
+            com.arix.wake.WakeLog.d("屏幕已亮，立即开窗监听（窗口档不等下次亮屏）")
+            e.submitTrigger(WakeTrigger.Explicit("start-screen-on"))
         } else {
             com.arix.wake.WakeLog.d("持续监听已开启（前台开麦，后台保持不重启）")
         }
@@ -449,6 +455,12 @@ class WakeService : Service() {
         try {
             e.stop()
             e.start(WakeConfig(powerPolicy = want))
+            // 窗口档换档后若屏幕已亮，SCREEN_ON 广播不会再来，必须立即开一次窗，
+            // 否则窗口档在「亮屏状态下换档」会一直等门控、永不开麦（同 startListening 的洞）。
+            if (want == WakePowerPolicy.WINDOWED && isScreenInteractive()) {
+                com.arix.wake.WakeLog.d("换档到窗口模式且屏幕已亮，立即开窗监听")
+                e.submitTrigger(WakeTrigger.Explicit("policy-change"))
+            }
         } catch (t: Throwable) {
             com.arix.wake.WakeLog.d("换档失败：${t.message}")
         }

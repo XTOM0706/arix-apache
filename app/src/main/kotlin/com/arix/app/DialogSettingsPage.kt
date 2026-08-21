@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.outlined.AltRoute
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.automirrored.outlined.Message
 import androidx.compose.material.icons.outlined.Autorenew
+import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.WavingHand
@@ -81,6 +82,7 @@ import com.arix.app.ui.topChromeGapHeight
     var actionOverlay by remember { mutableStateOf(UiActionOverlay.isEnabled(context)) }
     var dangerConfirm by remember { mutableStateOf(com.arix.tool.UiDangerGuard.isEnabled(context)) }
     var denyStopsTurn by remember { mutableStateOf(ConfigModePrefs.toolDenyStopsTurn(context)) }
+    var stuckGuard by remember { mutableStateOf(ConfigModePrefs.toolStuckGuard(context)) }
     var autoExtract by remember { mutableStateOf(ConfigModePrefs.autoExtractMemory(context)) }
     var autoExtractEvery by remember { mutableStateOf(ConfigModePrefs.autoExtractEvery(context)) }
     // 聊天行为：一份快照 + 一个写入口。ChatBehaviorPrefs.save 会同步刷进程内缓存，
@@ -221,6 +223,14 @@ import com.arix.app.ui.topChromeGapHeight
                 subtitle = tr("开启后，你拒绝某个工具时 AI 立即停止这一轮，不再继续尝试。关闭时（默认）它会知道「你拒绝了」，然后自己换个办法或直接回话。"),
                 checked = denyStopsTurn,
                 onCheckedChange = { denyStopsTurn = it; ConfigModePrefs.setToolDenyStopsTurn(context, it) },
+            )
+            // 内容级死循环保护：AI 卡住复读（hihihihi…/同一段反复）时掐掉；正常长分析反复读文件不误伤。
+            SettingsToggle(
+                icon = Icons.Outlined.Repeat,
+                title = tr("死循环保护"),
+                subtitle = tr("AI 生成无意义重复内容（同一句话/字母反复）时自动中断，逼它正常作答。默认开；长任务一切正常但偶尔被误掐时，可关掉让 AI 自己跑完。"),
+                checked = stuckGuard,
+                onCheckedChange = { stuckGuard = it; ConfigModePrefs.setToolStuckGuard(context, it) },
             )
             // 放在「直接执行」正下方：开了直接执行，用户最想要的下一件事就是"那它到底动了哪儿"。
             SettingsToggle(

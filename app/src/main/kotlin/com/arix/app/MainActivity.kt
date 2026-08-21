@@ -324,7 +324,7 @@ import androidx.compose.ui.unit.IntOffset
                  // 二选一渲染而不是把向导叠在 MainScreen 上：叠着的话背后整棵聊天树照样组合+绘制，
                  // 白烧一份帧预算（向导期间背景完全看不见）。
                  if (OnboardingGate.show.value) {
-                     OnboardingPage(onFinish = { route ->
+                     OnboardingPage(onFinish = { route, _ ->
                          // 「结束后去录唤醒词」：写进 NavRetain，下面 MainScreen 首次组合时就落在那一页
                          if (route != null) NavRetain.page = route
                          OnboardingGate.finish(act)
