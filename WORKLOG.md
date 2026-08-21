@@ -1,11 +1,15 @@
 # WORKLOG — Arix Apache-2.0 精简版
 
-> 更新时间：2026-08-03（opencode 会话）
-> 工作区：`E:\ArixApache`（独立 git 仓）
-> 最近提交：`11ad822`（WORKLOG）· **已 push**
-> 公开仓库：**https://github.com/XTOM0706/arix-apache**（**v0.0.2 已发布**，main=11ad822）
-> ✅ **v0.0.2 发布完成**（2026-08-03）：push + tag + Release 全绿，资产 app-release.apk（40.4MB）
-> 🔴 待办：无。下次跟进看主仓方向。
+> 更新时间：2026-08-21（dsh 会话）
+> 工作区：`E:\ArixApache`（独立 git 仓）；容器路径 `/media/xtom0706/OTHER/ArixApache`
+> 最近提交：`118f368`（同步主仓一批修复）· **未 push**
+> 公开仓库：**https://github.com/XTOM0706/arix-apache**（v0.0.2 已发布；本次同步**未升版本号**，是否发版待用户拍板）
+
+## ✅ 2026-08-21 同步主仓一批（commit `118f368`，对应主仓 cdd5adc 起一批）
+- **方法**：主仓自上次同步点 `ed5eea9` 起的改动，对共享文件做 3-way 合并（base=ed5eea9, theirs=主仓HEAD, ours=Apache HEAD），逐个解决冲突 + Apache 裁剪适配。**容器里 assembleDebug 通过**（app-debug.apk 67MB）。
+- **同步了 19 个文件**：CloudApiClient（tool null 根治 + reasoning_content 回传）、ReasoningPassthrough（补收 reasoning_content）、ConversationManager（缺 toolCallId 不落库）、ToolManager（空工具名明确反馈）、ChatComponents（思考抽屉收起动画）、DialogSettingsPage（死循环保护设置）、EnvContext（concern 节流）、WakeService（默认档回 ALWAYS_ON + 亮屏补开窗）、VoiceTurn/EmbeddingPrototypeDetector（VAD 复用 + short 数组）、BleTool（空闲回收）、OnboardingPage/OnboardingPrefs（去哪找手把手）、MarkdownText（列表顶部对齐）、build.gradle.kts（resourceConfigurations 限中英 + META-INF/okhttp 排除，**保留 appcompat**）、I18nStrings/i18n_table.json（与主仓 HEAD 一致）。
+- **非适用改动未同步**（Apache 无对应功能，整文件覆盖会编译错）：FirstUseGuide/CapsuleBridge/ContentLoopDetector 点位引导（ChatScreen/MainActivity）、LocalSttPool/VoiceCall 语音池（WakeAssistantActivity）、MemoryManager/MemoryInjection 语义检索冷即（Apache 是文件版记忆，语义 embedding 已裁）。
+- **构建注意（容器）**：gradlew 需先转 LF；aapt2 在 NTFS 无执行位 → GRADLE_USER_HOME 用 `/tmp/arix-gradle-exec` 的 executable cache；local.properties 写 `sdk.dir=/home/xtom0706/Android/Sdk`。
 
 ## ✅ 2026-08-03 升 v0.0.2 + 移除竞品监控（本会话，**待 push**）
 
