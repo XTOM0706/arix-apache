@@ -20,8 +20,18 @@ private val arixKeyProps = Properties().apply {
 private fun arixSecret(key: String, env: String): String? =
     (arixKeyProps.getProperty(key) ?: System.getenv(env))?.takeIf { it.isNotBlank() }
 
-private val arixStoreFile = arixSecret("arix.storeFile", "ARIX_STORE_FILE")
-    ?.let { rootProject.file(it) }?.takeIf { it.isFile }
+private val arixStoreFile = (arixSecret("arix.storeFile", "ARIX_STORE_FILE")
+    ?.let { rootProject.file(it) }?.takeIf { it.isFile })
+    ?: detectArixStoreFile()
+
+private fun detectArixStoreFile(): java.io.File? {
+    val candidates = if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+        listOf("E:\\ArixKeys\\arix-release.jks")
+    } else {
+        listOf("/media/xtom0706/OTHER/ArixKeys/arix-release.jks")
+    }
+    return candidates.map { rootProject.file(it) }.firstOrNull { it.isFile }
+}
 
 android {
     namespace = "com.arix.app"
@@ -59,8 +69,8 @@ android {
         // 满血版 versionCode 从 7 起、只会越来越高，所以永远能覆盖本版。
         // ⚠️ versionName 也取**比满血版低**的数字（0.0.x < 0.2.x），避免让用户误以为这是更新的版本——
         // 它的定位是「可被任何版本覆盖的垫底精简版」。同线升级（0.0.1→0.0.2）仍需 versionCode 递增以便覆盖。
-        versionCode = 2
-        versionName = "0.0.2"
+        versionCode = 3
+        versionName = "0.0.3"
         // 只打包 arm64-v8a 原生库：去掉 x86/x86_64/armeabi-v7a 三份 .so（约 -44MB）。
         // 不丢任何 App 功能；仅不支持 x86 模拟器与极老的 32 位设备。要支持模拟器就删掉这行。
         ndk { abiFilters += "arm64-v8a" }
