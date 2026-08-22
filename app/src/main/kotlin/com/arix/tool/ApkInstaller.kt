@@ -26,6 +26,10 @@ import java.security.MessageDigest
  * 下载源可能是镜像、可能是用户自填的自建地址、可能走明文 http——这些都不可信；
  * 可信的只有"只有我们签得出这个签名"。所以校验放在**交给安装器之前**，对不上就丢弃。
  *
+ * ⚠️ 2026-08-22 用户定：签名不一致时**不再丢弃**——保留本地包，并去下载源的 GitHub release
+ * 拉官方 APK 核对密钥（[verifyAgainstOfficial]）：与官方一致 = 包没被篡改、只是签名版本不同
+ * （如从调试版换正式版），仍交给安装器；与官方也不一致 = 提示可能被篡改、建议去仓库下载。
+ *
  * ⚠️ 这也是为什么 release **必须**用正式密钥签：用 Android SDK 那把公开的 debug 密钥签名时，
  * 任何人都能签出"通过这道校验"的包，这个函数就成了摆设。见 app/build.gradle.kts 顶部那段。
  */
@@ -107,11 +111,84 @@ object ApkInstaller {
         }
 
         if (!signedLikeSelf(ctx, out)) {
-            runCatching { out.delete() }
-            return "下载的安装包签名与本应用不一致，已丢弃（下载源可能被篡改）。请改用官方地址。"
+            // ⚠ 2026-08-22 用户定：**不再丢弃**。签名不一致时保留本地包，并尝试去下载源
+            // （GitHub release）核对官方密钥：
+            //  · 与官方一致 → 包没被篡改，只是签名版本不同（如从调试版换正式版/换仓库版本），
+            //    核心破解的机器可直接装，普通机器提示先卸载旧版。→ 仍唤起安装器。
+            //  · 与官方也不一致 / 核对不上 → 提示可能被篡改、建议去仓库下载；本地包保留不删，
+            //    但不唤起安装器（不主动装可疑包，装不装由用户自己决定）。
+            return verifyAgainstOfficial(ctx, out, url)
         }
         return launchInstaller(ctx, out)
     }
+
+    /**
+     * 签名不一致时的核对：去下载源的 GitHub release 拉官方 APK 对密钥。
+     * 返回 null = 已唤起安装器（与官方一致），非 null = 给用户看的提示（包保留、未装）。
+     */
+    private suspend fun verifyAgainstOfficial(ctx: Context, out: File, url: String): String? {
+        val repo = repoOf(url)
+        val apkUrl = if (repo != null) fetchReleaseApkUrl(ctx, repo) else null
+        if (apkUrl == null) {
+            return "下载的安装包签名与本应用不一致，且暂时无法联系官方仓库核对（下载源可能被篡改）。" +
+                "本地安装包已保留。建议到官方仓库下载安装：https://github.com/${repo ?: "XTOM0706/arix-app"}/releases"
+        }
+        // 拉官方 release 的 APK 下来只做签名核对，用完即删（不下完整包就没法读它的证书）。
+        val official = File(ctx.cacheDir, "official-check.apk")
+        val ok = withContext(Dispatchers.IO) {
+            try {
+                val conn = com.arix.tool.OperitCompat.openGh(apkUrl, readMs = 60_000) ?: return@withContext false
+                try {
+                    conn.inputStream.use { i -> FileOutputStream(official).use { o -> i.copyTo(o) } }
+                } finally { runCatching { conn.disconnect() } }
+                official.length() > 0
+            } catch (_: Exception) { false }
+        }
+        val same = ok && official.exists() && signedSame(ctx, out, official)
+        runCatching { official.delete() }
+        return if (same) {
+            // 与官方一致：包没被篡改，只是与本机已装版本签名不同 → 直接交给安装器
+            // （MIUI 核心破解等可覆盖安装；普通机器系统会提示签名不一致，用户可选择先卸载旧版）。
+            launchInstaller(ctx, out)
+        } else {
+            "下载的安装包签名既与本应用不一致、也与官方仓库 release 不一致，可能已被篡改。" +
+                "本地安装包已保留但未安装，建议到官方仓库重新下载：https://github.com/$repo/releases"
+        }
+    }
+
+    /** 从 GitHub release 直链里推出 owner/repo（下载源=核对对象）；非 GitHub 地址返回 null。 */
+    private fun repoOf(url: String): String? = runCatching {
+        Regex("""github\.com/([^/]+)/([^/]+)""").find(url)?.let { "${it.groupValues[1]}/${it.groupValues[2]}" }
+    }.getOrNull()
+
+    /** 取某个仓库最新 release 里第一个 apk 资产的直链（与 UpdateChecker 同思路，放 tool 包避免依赖 app 包）。 */
+    private suspend fun fetchReleaseApkUrl(ctx: Context, repo: String): String? = withContext(Dispatchers.IO) {
+        val api = "https://api.github.com/repos/$repo/releases?per_page=5"
+        val conn = com.arix.tool.OperitCompat.openGh(api, connectMs = 10_000, readMs = 10_000) ?: return@withContext null
+        try {
+            if (conn.responseCode !in 200..299) return@withContext null
+            val arr = org.json.JSONArray(conn.inputStream.bufferedReader().use { it.readText() })
+            if (arr.length() == 0) return@withContext null
+            val assets = arr.getJSONObject(0).optJSONArray("assets") ?: return@withContext null
+            for (i in 0 until assets.length()) {
+                val a = assets.optJSONObject(i) ?: continue
+                if (a.optString("name").endsWith(".apk"))
+                    return@withContext a.optString("browser_download_url").takeIf { it.isNotBlank() }
+            }
+            null
+        } catch (_: Exception) { null } finally { runCatching { conn.disconnect() } }
+    }
+
+    /** 两个 APK 文件是否同签名（同一签署证书）。任意一侧取不到证书都判否。 */
+    private fun signedSame(ctx: Context, a: File, b: File): Boolean = runCatching {
+        val pm = ctx.packageManager
+        @Suppress("DEPRECATION")
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+            PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+        val da = certDigests(pm.getPackageArchiveInfo(a.absolutePath, flags))
+        val db = certDigests(pm.getPackageArchiveInfo(b.absolutePath, flags))
+        da.isNotEmpty() && da == db
+    }.getOrDefault(false)
 
     /** 下载的 APK 是否与本 App 同签名（同一签署证书）。任一侧取不到证书都判否（fail-closed）。 */
     fun signedLikeSelf(ctx: Context, apk: File): Boolean = runCatching {

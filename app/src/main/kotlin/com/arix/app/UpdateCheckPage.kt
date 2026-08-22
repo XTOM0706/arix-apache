@@ -486,7 +486,7 @@ object UpdateChecker {
                             }
                             Spacer(Modifier.height(6.dp))
                             // 这句不是免责声明，是说明「凭什么敢直接装」——校验的是签名，不是文件名或来源
-                            SettingsHint(tr("下载完会先核对安装包的签名与本应用一致，对不上就直接丢弃、不会交给安装器。最后一步仍由系统安装界面确认，App 不会静默替换自己。"))
+                            SettingsHint(tr("下载完会先核对安装包的签名与本应用一致；不一致会保留安装包、并去官方仓库核对密钥，确认没被篡改才交给安装器。最后一步仍由系统安装界面确认，App 不会静默替换自己。"))
                         }
                         Spacer(Modifier.height(4.dp))
                         XtomButton(onClick = { open(r.release.url) }) {
